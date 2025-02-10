@@ -87,37 +87,54 @@ class AIBookEssayGenerator:
 
     def generate_essay(self, prompt: str, word_limit: int = 500, style: str = "academic") -> str:
         """Generate an essay using the DeepSeek model with caching."""
-        # Prepare context with source information
-        context = f"Sources:\n"
+        # Prepare MLA source citations
+        mla_citations = []
+        for source in self.sources:
+            # Extract author from filename (assuming format: Author - Title.ext)
+            author = source['name'].split(' - ')[0] if ' - ' in source['name'] else "Unknown Author"
+            title = source['name'].split(' - ')[1].rsplit('.', 1)[0] if ' - ' in source['name'] else source['name']
+            
+            # Format MLA citation based on source type
+            if source['type'] == 'pdf':
+                citation = f"{author}. \"{title}.\" PDF file."
+            elif source['type'] == 'epub':
+                citation = f"{author}. \"{title}.\" E-book."
+            else:  # txt and others
+                citation = f"{author}. \"{title}.\""
+            
+            mla_citations.append(citation)
+        
+        # Prepare context with source information and citation instructions
+        context = "Source Materials:\n"
         for source in self.sources:
             context += f"- {source['name']} ({source['type']})\n"
         context += f"\nContent:\n{self.content}\n"
         
+        # Add citation instructions to prompt
+        enhanced_prompt = f"""Write an essay addressing this prompt: {prompt}
+
+Requirements:
+1. Include relevant quotes from the source materials
+2. Use MLA in-text citations (Author Page) for each quote
+3. The essay should be approximately {word_limit} words
+4. Use {style} writing style
+5. End with a Works Cited section in MLA format
+
+Source Citations for Works Cited:
+{chr(10).join(mla_citations)}
+
+Begin the essay:"""
+        
         # Check cache for existing essay
-        cached_essay = self.cache_manager.get_cached_model_output(prompt, context)
+        cached_essay = self.cache_manager.get_cached_model_output(enhanced_prompt, context)
         if cached_essay is not None:
             return cached_essay
         
-        # Add style instructions
-        style_instructions = {
-            "academic": "Write in a formal academic style with proper citations.",
-            "analytical": "Provide a detailed analysis with supporting evidence.",
-            "argumentative": "Present a clear argument with supporting evidence.",
-            "expository": "Explain the topic clearly and informatively."
-        }
-        
-        # Calculate approximate token limit based on word limit
-        token_limit = word_limit * 1.5  # Approximate tokens per word
-        
-        # Generate essay
-        essay = self.model.generate_essay(
-            context=context,
-            prompt=f"{prompt}\n{style_instructions.get(style.lower(), style_instructions['academic'])}",
-            max_length=int(token_limit)
-        )
+        # Generate essay with the model
+        essay = self.model.generate_essay(context, enhanced_prompt)
         
         # Cache the generated essay
-        self.cache_manager.cache_model_output(prompt, context, essay)
+        self.cache_manager.cache_model_output(enhanced_prompt, context, essay)
         
         return essay
 

@@ -14,12 +14,16 @@ class DeepSeekHandler:
         
     def generate_essay(self, context: str, prompt: str, max_length: int = MAX_LENGTH) -> str:
         """Generate an essay using the DeepSeek model."""
-        instruction = f"""Based on the following context, write an essay addressing this prompt: {prompt}
-        
-        Context:
-        {context}
-        
-        Write a well-structured essay with proper citations and references."""
+        instruction = f"""You are a skilled academic writer. {prompt}
+
+Please ensure that:
+1. All quotes are properly integrated into the text
+2. Each quote has an MLA in-text citation (Author Page)
+3. The essay follows proper MLA formatting
+4. The Works Cited section at the end follows MLA format exactly
+
+Context:
+{context}"""
         
         inputs = self.tokenizer(instruction, return_tensors="pt").to(self.model.device)
         
