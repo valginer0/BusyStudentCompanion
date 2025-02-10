@@ -1,7 +1,7 @@
 """DeepSeek model handler for essay generation."""
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
-from .config import MODEL_NAME, MAX_LENGTH, TEMPERATURE
+from src.book_to_essay.config import MODEL_NAME, MAX_LENGTH, TEMPERATURE
 
 class DeepSeekHandler:
     def __init__(self):

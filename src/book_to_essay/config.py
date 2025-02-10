@@ -23,3 +23,7 @@ OUTPUT_DIR = 'output'
 # Ensure required directories exist
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Cache Settings
+CACHE_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'cache')
+os.makedirs(CACHE_DIR, exist_ok=True)

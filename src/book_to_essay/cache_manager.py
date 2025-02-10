@@ -33,10 +33,15 @@ class CacheManager:
             json.dump(self.metadata, f)
 
     def _get_file_hash(self, file_path: str) -> str:
-        """Generate a hash for a file based on its content and metadata."""
-        file_stat = os.stat(file_path)
-        metadata = f"{file_path}_{file_stat.st_size}_{file_stat.st_mtime}"
-        return hashlib.md5(metadata.encode()).hexdigest()
+        """Generate a hash for a file based on its content."""
+        try:
+            with open(file_path, 'rb') as f:
+                content = f.read()
+                return hashlib.md5(content).hexdigest()
+        except Exception as e:
+            print(f"Error reading file for hashing: {e}")
+            # Fallback to filename-based hash if file can't be read
+            return hashlib.md5(os.path.basename(file_path).encode()).hexdigest()
 
     def _get_content_cache_path(self, file_hash: str) -> Path:
         """Get the cache file path for content."""
@@ -48,89 +53,81 @@ class CacheManager:
 
     def get_cached_content(self, file_path: str) -> Optional[Dict[str, Any]]:
         """Get cached content for a file if it exists and is valid."""
-        file_hash = self._get_file_hash(file_path)
-        cache_path = self._get_content_cache_path(file_hash)
-        
-        if not cache_path.exists():
-            return None
+        try:
+            file_hash = self._get_file_hash(file_path)
+            cache_path = self._get_content_cache_path(file_hash)
             
-        metadata = self.metadata["content"].get(file_hash)
-        if not metadata:
-            return None
-            
-        # Check if cache is expired (7 days)
-        cache_date = datetime.fromisoformat(metadata["cached_at"])
-        if datetime.now() - cache_date > timedelta(days=7):
-            return None
-            
-        with open(cache_path, 'rb') as f:
-            return pickle.load(f)
+            if cache_path.exists():
+                with open(cache_path, 'rb') as f:
+                    return pickle.load(f)
+        except Exception as e:
+            print(f"Error accessing cache for {file_path}: {e}")
+        return None
 
     def cache_content(self, file_path: str, content: Dict[str, Any]):
-        """Cache processed content from a file."""
-        file_hash = self._get_file_hash(file_path)
-        cache_path = self._get_content_cache_path(file_hash)
-        
-        with open(cache_path, 'wb') as f:
-            pickle.dump(content, f)
+        """Cache processed content for a file."""
+        try:
+            file_hash = self._get_file_hash(file_path)
+            cache_path = self._get_content_cache_path(file_hash)
             
-        self.metadata["content"][file_hash] = {
-            "file_path": file_path,
-            "cached_at": datetime.now().isoformat()
-        }
-        self._save_metadata()
+            with open(cache_path, 'wb') as f:
+                pickle.dump(content, f)
+            
+            self.metadata["content"][file_path] = {
+                "hash": file_hash,
+                "timestamp": datetime.now().isoformat()
+            }
+            self._save_metadata()
+        except Exception as e:
+            print(f"Error caching content for {file_path}: {e}")
 
     def get_cached_model_output(self, prompt: str, context: str) -> Optional[str]:
         """Get cached model output if it exists and is valid."""
-        prompt_data = f"{prompt}_{context}"
-        prompt_hash = hashlib.md5(prompt_data.encode()).hexdigest()
-        cache_path = self._get_model_cache_path(prompt_hash)
-        
-        if not cache_path.exists():
-            return None
+        try:
+            prompt_data = f"{prompt}_{context}"
+            prompt_hash = hashlib.md5(prompt_data.encode()).hexdigest()
+            cache_path = self._get_model_cache_path(prompt_hash)
             
-        metadata = self.metadata["model"].get(prompt_hash)
-        if not metadata:
-            return None
-            
-        # Check if cache is expired (1 day for model outputs)
-        cache_date = datetime.fromisoformat(metadata["cached_at"])
-        if datetime.now() - cache_date > timedelta(days=1):
-            return None
-            
-        with open(cache_path, 'rb') as f:
-            return pickle.load(f)
+            if cache_path.exists():
+                with open(cache_path, 'rb') as f:
+                    return pickle.load(f)
+        except Exception as e:
+            print(f"Error accessing cache for {prompt} and {context}: {e}")
+        return None
 
     def cache_model_output(self, prompt: str, context: str, output: str):
         """Cache model output for a prompt and context."""
-        prompt_data = f"{prompt}_{context}"
-        prompt_hash = hashlib.md5(prompt_data.encode()).hexdigest()
-        cache_path = self._get_model_cache_path(prompt_hash)
-        
-        with open(cache_path, 'wb') as f:
-            pickle.dump(output, f)
+        try:
+            prompt_data = f"{prompt}_{context}"
+            prompt_hash = hashlib.md5(prompt_data.encode()).hexdigest()
+            cache_path = self._get_model_cache_path(prompt_hash)
             
-        self.metadata["model"][prompt_hash] = {
-            "cached_at": datetime.now().isoformat()
-        }
-        self._save_metadata()
+            with open(cache_path, 'wb') as f:
+                pickle.dump(output, f)
+            
+            self.metadata["model"][prompt_hash] = {
+                "timestamp": datetime.now().isoformat()
+            }
+            self._save_metadata()
+        except Exception as e:
+            print(f"Error caching model output for {prompt} and {context}: {e}")
 
     def clear_expired_cache(self):
         """Clear expired cache entries."""
         now = datetime.now()
         
         # Clear expired content cache (7 days)
-        for file_hash, metadata in list(self.metadata["content"].items()):
-            cache_date = datetime.fromisoformat(metadata["cached_at"])
+        for file_path, metadata in list(self.metadata["content"].items()):
+            cache_date = datetime.fromisoformat(metadata["timestamp"])
             if now - cache_date > timedelta(days=7):
-                cache_path = self._get_content_cache_path(file_hash)
+                cache_path = self._get_content_cache_path(metadata["hash"])
                 if cache_path.exists():
                     cache_path.unlink()
-                del self.metadata["content"][file_hash]
+                del self.metadata["content"][file_path]
         
         # Clear expired model cache (1 day)
         for prompt_hash, metadata in list(self.metadata["model"].items()):
-            cache_date = datetime.fromisoformat(metadata["cached_at"])
+            cache_date = datetime.fromisoformat(metadata["timestamp"])
             if now - cache_date > timedelta(days=1):
                 cache_path = self._get_model_cache_path(prompt_hash)
                 if cache_path.exists():

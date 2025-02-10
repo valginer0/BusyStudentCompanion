@@ -6,8 +6,8 @@ from ebooklib import epub
 from bs4 import BeautifulSoup
 import re
 from typing import List, Optional, Dict, Any
-from .model_handler import DeepSeekHandler
-from .cache_manager import CacheManager
+from src.book_to_essay.model_handler import DeepSeekHandler
+from src.book_to_essay.cache_manager import CacheManager
 
 class AIBookEssayGenerator:
     def __init__(self):
@@ -25,6 +25,9 @@ class AIBookEssayGenerator:
 
     def _process_file_content(self, file_path: str, processor_func) -> Dict[str, Any]:
         """Process file content with caching."""
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+            
         # Check cache first
         cached_content = self.cache_manager.get_cached_content(file_path)
         if cached_content is not None:
@@ -34,6 +37,9 @@ class AIBookEssayGenerator:
 
         # Process content if not cached
         content = processor_func(file_path)
+        if not content:
+            raise ValueError(f"No content could be extracted from {file_path}")
+            
         source = {
             'path': file_path,
             'name': os.path.basename(file_path),
@@ -55,33 +61,59 @@ class AIBookEssayGenerator:
     def load_txt_file(self, file_path: str):
         """Load content from a text file with caching."""
         def process_txt(file_path):
-            with open(file_path, 'r', encoding='utf-8') as file:
-                return file.read()
+            try:
+                with open(file_path, 'r', encoding='utf-8') as file:
+                    content = file.read()
+                    if not content.strip():
+                        raise ValueError("File is empty")
+                    return content
+            except UnicodeDecodeError:
+                # Try different encodings
+                for encoding in ['latin-1', 'cp1252', 'iso-8859-1']:
+                    try:
+                        with open(file_path, 'r', encoding=encoding) as file:
+                            content = file.read()
+                            if content.strip():
+                                return content
+                    except UnicodeDecodeError:
+                        continue
+                raise ValueError(f"Could not decode file {file_path} with any supported encoding")
         
         self._process_file_content(file_path, process_txt)
 
     def load_pdf_file(self, file_path: str):
         """Load content from a PDF file with caching."""
         def process_pdf(file_path):
-            pdf_document = fitz.open(file_path)
-            content = ""
-            for page_num in range(len(pdf_document)):
-                page = pdf_document.load_page(page_num)
-                content += page.get_text() + "\n"
-            return content
+            try:
+                pdf_document = fitz.open(file_path)
+                content = ""
+                for page_num in range(len(pdf_document)):
+                    page = pdf_document.load_page(page_num)
+                    content += page.get_text() + "\n"
+                pdf_document.close()
+                if not content.strip():
+                    raise ValueError("PDF appears to be empty or unreadable")
+                return content
+            except Exception as e:
+                raise ValueError(f"Error reading PDF {file_path}: {str(e)}")
         
         self._process_file_content(file_path, process_pdf)
 
     def load_epub_file(self, file_path: str):
         """Load content from an EPUB file with caching."""
         def process_epub(file_path):
-            book = epub.read_epub(file_path)
-            content = ""
-            for item in book.get_items():
-                if item.get_type() == ebooklib.ITEM_DOCUMENT:
-                    soup = BeautifulSoup(item.get_content(), 'html.parser')
-                    content += soup.get_text() + "\n"
-            return content
+            try:
+                book = epub.read_epub(file_path)
+                content = ""
+                for item in book.get_items():
+                    if item.get_type() == ebooklib.ITEM_DOCUMENT:
+                        soup = BeautifulSoup(item.get_content(), 'html.parser')
+                        content += soup.get_text() + "\n"
+                if not content.strip():
+                    raise ValueError("EPUB appears to be empty or contains no readable text")
+                return content
+            except Exception as e:
+                raise ValueError(f"Error reading EPUB {file_path}: {str(e)}")
         
         self._process_file_content(file_path, process_epub)
 

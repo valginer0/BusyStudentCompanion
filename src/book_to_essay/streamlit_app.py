@@ -2,8 +2,9 @@
 import streamlit as st
 from pathlib import Path
 import tempfile
-from ai_book_to_essay_generator import AIBookEssayGenerator
-from config import SUPPORTED_FORMATS, MAX_UPLOAD_SIZE_MB
+import os
+from src.book_to_essay.ai_book_to_essay_generator import AIBookEssayGenerator
+from src.book_to_essay.config import SUPPORTED_FORMATS, MAX_UPLOAD_SIZE_MB
 
 st.set_page_config(
     page_title="Book to Essay Generator",
@@ -50,21 +51,39 @@ def main():
                 return
                 
             with st.spinner("Processing books and generating essay..."):
-                # Process uploaded files
-                for uploaded_file in uploaded_files:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as tmp_file:
-                        tmp_file.write(uploaded_file.getvalue())
-                        if tmp_file.name.endswith('.pdf'):
-                            st.session_state.generator.load_pdf_file(tmp_file.name)
-                        elif tmp_file.name.endswith('.txt'):
-                            st.session_state.generator.load_txt_file(tmp_file.name)
-                        elif tmp_file.name.endswith('.epub'):
-                            st.session_state.generator.load_epub_file(tmp_file.name)
-                
-                # Generate essay
-                essay = st.session_state.generator.generate_essay(topic, word_limit)
-                st.session_state.essay = essay
-                st.session_state.quotes = st.session_state.generator.extract_quotes()
+                try:
+                    # Create a temporary directory for uploaded files
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        # Process uploaded files
+                        for uploaded_file in uploaded_files:
+                            try:
+                                # Create a temporary file path
+                                temp_file_path = os.path.join(temp_dir, uploaded_file.name)
+                                
+                                # Save the uploaded file
+                                with open(temp_file_path, 'wb') as f:
+                                    f.write(uploaded_file.getbuffer())
+                                
+                                # Process the file based on its type
+                                if temp_file_path.endswith('.pdf'):
+                                    st.session_state.generator.load_pdf_file(temp_file_path)
+                                elif temp_file_path.endswith('.txt'):
+                                    st.session_state.generator.load_txt_file(temp_file_path)
+                                elif temp_file_path.endswith('.epub'):
+                                    st.session_state.generator.load_epub_file(temp_file_path)
+                                    
+                                st.success(f"Successfully processed {uploaded_file.name}")
+                            except Exception as e:
+                                st.error(f"Error processing {uploaded_file.name}: {str(e)}")
+                                continue
+                        
+                        # Generate essay
+                        essay = st.session_state.generator.generate_essay(topic, word_limit)
+                        st.session_state.essay = essay
+                        st.session_state.quotes = st.session_state.generator.extract_quotes()
+                except Exception as e:
+                    st.error(f"An error occurred: {str(e)}")
+                    return
 
     with col2:
         st.header("Generated Essay")
