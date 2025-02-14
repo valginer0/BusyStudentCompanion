@@ -26,7 +26,15 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 3. Install dependencies:
 ```bash
+# First install base requirements
 pip install -r requirements.txt
+
+# Then, based on your system:
+# For systems with NVIDIA GPU:
+pip install -r requirements-gpu.txt
+
+# OR for CPU-only systems:
+pip install -r requirements-cpu.txt
 ```
 
 4. Set up environment variables:
@@ -34,6 +42,14 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env file with your API keys and configuration
 ```
+
+## First Run Notice
+
+On the first run, the application will:
+1. Download the DeepSeek language model (optimized size: ~4GB)
+2. The download may take 15-30 minutes depending on your internet speed
+3. The model will be cached locally and subsequent runs will start immediately
+4. Memory usage is optimized using 4-bit quantization while maintaining high quality
 
 ## Usage
 

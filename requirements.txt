@@ -1,3 +1,4 @@
+--extra-index-url https://test.pypi.org/simple/
 fastapi==0.104.1
 streamlit==1.31.1
 transformers==4.35.2
@@ -5,3 +6,6 @@ python-dotenv==1.0.0
 pymupdf==1.23.7
 ebooklib==0.18
 beautifulsoup4==4.12.2
+accelerate==0.25.0
+scipy>=1.9.0  # Required for bitsandbytes
+bitsandbytes==0.41.3
