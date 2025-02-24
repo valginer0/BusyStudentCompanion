@@ -18,9 +18,6 @@ class TestQuantization(unittest.TestCase):
     def setUp(self):
         # Configure logging to capture log messages
         self.log_messages = []
-        self.handler = logging.StreamHandler()
-        self.handler.setLevel(logging.INFO)
-        logging.getLogger().addHandler(self.handler)
         
         # Create a custom handler to capture log messages
         class TestLogHandler(logging.Handler):
@@ -32,7 +29,15 @@ class TestQuantization(unittest.TestCase):
                 self.messages.append(record.getMessage())
                 
         self.test_handler = TestLogHandler(self.log_messages)
-        logging.getLogger().addHandler(self.test_handler)
+        self.test_handler.setLevel(logging.INFO)
+        
+        # Get the specific loggers
+        self.config_logger = logging.getLogger('src.book_to_essay.config')
+        self.model_logger = logging.getLogger('src.book_to_essay.model_handler')
+        self.config_logger.setLevel(logging.INFO)
+        self.model_logger.setLevel(logging.INFO)
+        self.config_logger.addHandler(self.test_handler)
+        self.model_logger.addHandler(self.test_handler)
 
     @patch.multiple('src.book_to_essay.config',
                    HAS_BITSANDBYTES=True,
@@ -41,28 +46,35 @@ class TestQuantization(unittest.TestCase):
     @patch('torch.cuda.is_available', return_value=True)
     def test_environment_detection_logging(self, mock_cuda):
         """Test that environment detection is properly logged."""
-        # Reset the config module to trigger environment detection
-        import importlib
-        import src.book_to_essay.config
-        importlib.reload(src.book_to_essay.config)
+        # Mock bitsandbytes import and version
+        with patch.dict('sys.modules', {'bitsandbytes': MagicMock()}):
+            with patch('importlib.metadata.version', return_value="0.39.0"):
+                # Reset the config module to trigger environment detection
+                import importlib
+                import src.book_to_essay.config
+                importlib.reload(src.book_to_essay.config)
         
-        # Check if environment detection was logged
-        env_logs = [msg for msg in self.log_messages if "Environment detected" in msg]
-        self.assertTrue(any(env_logs))
-        self.assertIn("GPU=True", env_logs[0])
-        self.assertIn("BitsAndBytes=True", env_logs[0])
+                # Check if environment detection was logged
+                env_logs = [msg for msg in self.log_messages if "Environment detected: GPU=True, BitsAndBytes=True" in msg]
+                self.assertTrue(any(env_logs))
 
     def test_gpu_quantization_config(self):
         """Test 4-bit quantization config when GPU and bitsandbytes are available."""
         with patch('torch.cuda.is_available', return_value=True):
             with patch('src.book_to_essay.config.HAS_BITSANDBYTES', True):
-                with patch('importlib.metadata.version', return_value="0.39.0"):
-                    config = QuantizationConfig.get_config()
+                with patch.dict('sys.modules', {'bitsandbytes': MagicMock()}):
+                    with patch('importlib.metadata.version', return_value="0.39.0"):
+                        # Reset the config module to trigger environment detection
+                        import importlib
+                        import src.book_to_essay.config
+                        importlib.reload(src.book_to_essay.config)
+                        
+                        config = QuantizationConfig.get_config()
                     
-                    # Check if correct quantization method was logged
-                    quant_logs = [msg for msg in self.log_messages if "4-bit quantization" in msg]
-                    self.assertTrue(any(quant_logs))
-                    self.assertEqual(config['method'], '4bit')
+                        # Check if correct quantization method was logged
+                        quant_logs = [msg for msg in self.log_messages if "Using 4-bit quantization with bitsandbytes" in msg]
+                        self.assertTrue(any(quant_logs))
+                        self.assertEqual(config['method'], '4bit')
 
     def test_cpu_quantization_config(self):
         """Test 8-bit quantization config for CPU-only environment."""
@@ -70,7 +82,7 @@ class TestQuantization(unittest.TestCase):
             config = QuantizationConfig.get_config()
             
             # Check if correct quantization method was logged
-            quant_logs = [msg for msg in self.log_messages if "8-bit dynamic quantization" in msg]
+            quant_logs = [msg for msg in self.log_messages if "Using 8-bit dynamic quantization (CPU)" in msg]
             self.assertTrue(any(quant_logs))
             self.assertEqual(config['method'], '8bit_cpu')
 
@@ -87,7 +99,7 @@ class TestQuantization(unittest.TestCase):
         
         # Check for expected log messages
         expected_logs = [
-            "Loading model",
+            "Loading model and tokenizer",
             "Loading tokenizer",
             "Loading model with quantization config",
             "Model loaded successfully"
@@ -114,8 +126,8 @@ class TestQuantization(unittest.TestCase):
 
     def tearDown(self):
         # Remove our test handler
-        logging.getLogger().removeHandler(self.test_handler)
-        logging.getLogger().removeHandler(self.handler)
+        self.config_logger.removeHandler(self.test_handler)
+        self.model_logger.removeHandler(self.test_handler)
 
 if __name__ == '__main__':
     unittest.main()

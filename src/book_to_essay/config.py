@@ -6,7 +6,10 @@ from dotenv import load_dotenv
 from transformers import BitsAndBytesConfig
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # Load environment variables
@@ -21,7 +24,6 @@ try:
 except ImportError:
     pass
 
-# Log environment detection
 logger.info(f"Environment detected: GPU={HAS_GPU}, BitsAndBytes={HAS_BITSANDBYTES}")
 
 # Model Settings
@@ -39,29 +41,42 @@ class QuantizationConfig:
             logger.info("Using 4-bit quantization with bitsandbytes")
             return {
                 "method": "4bit",
-                "quantization_config": BitsAndBytesConfig(
-                    load_in_4bit=True,
-                    bnb_4bit_quant_type="nf4",
-                    bnb_4bit_use_double_quant=True,
-                    bnb_4bit_compute_dtype=torch.bfloat16
-                ),
-                "device_map": "auto",
-                "low_cpu_mem_usage": True
+                "load_config": {
+                    "quantization_config": BitsAndBytesConfig(
+                        load_in_4bit=True,
+                        bnb_4bit_quant_type="nf4",
+                        bnb_4bit_use_double_quant=True,
+                        bnb_4bit_compute_dtype=torch.bfloat16
+                    ),
+                    "device_map": "auto",
+                    "load_in_4bit": True,
+                    "low_cpu_mem_usage": True
+                },
+                "post_load_quantize": None
             }
         elif not HAS_GPU:
-            logger.info("Using 8-bit dynamic quantization for CPU")
+            logger.info("Using 8-bit dynamic quantization (CPU)")
             return {
                 "method": "8bit_cpu",
-                "device_map": "cpu",
-                "low_cpu_mem_usage": True
+                "load_config": {
+                    "device_map": "cpu",
+                    "low_cpu_mem_usage": True
+                },
+                "post_load_quantize": {
+                    "dtype": torch.qint8,
+                    "target_modules": {torch.nn.Linear}
+                }
             }
         else:
-            logger.info("Using FP16 quantization")
+            logger.info("Using 16-bit floating point (GPU)")
             return {
                 "method": "fp16",
-                "torch_dtype": torch.float16,
-                "device_map": "auto",
-                "low_cpu_mem_usage": True
+                "load_config": {
+                    "torch_dtype": torch.float16,
+                    "device_map": "auto",
+                    "low_cpu_mem_usage": True
+                },
+                "post_load_quantize": None
             }
 
 # Get quantization configuration
