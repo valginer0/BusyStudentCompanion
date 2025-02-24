@@ -5,7 +5,11 @@ from unittest.mock import patch, MagicMock
 import sys
 import os
 import torch
-from src.book_to_essay.config import QuantizationConfig
+
+# Add the project root to the Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from src.book_to_essay.config import QuantizationConfig, HAS_GPU, HAS_BITSANDBYTES
 from src.book_to_essay.model_handler import DeepSeekHandler
 
 class TestQuantization(unittest.TestCase):
@@ -14,6 +18,9 @@ class TestQuantization(unittest.TestCase):
     def setUp(self):
         # Configure logging to capture log messages
         self.log_messages = []
+        self.handler = logging.StreamHandler()
+        self.handler.setLevel(logging.INFO)
+        logging.getLogger().addHandler(self.handler)
         
         # Create a custom handler to capture log messages
         class TestLogHandler(logging.Handler):
@@ -24,29 +31,26 @@ class TestQuantization(unittest.TestCase):
             def emit(self, record):
                 self.messages.append(record.getMessage())
                 
-        # Reset logging configuration
-        for handler in logging.getLogger().handlers[:]:
-            logging.getLogger().removeHandler(handler)
-        
-        # Set up our test handler
         self.test_handler = TestLogHandler(self.log_messages)
         logging.getLogger().addHandler(self.test_handler)
-        logging.getLogger().setLevel(logging.INFO)
 
-    def test_environment_detection_logging(self):
+    @patch.multiple('src.book_to_essay.config',
+                   HAS_BITSANDBYTES=True,
+                   HAS_GPU=True,
+                   create=True)
+    @patch('torch.cuda.is_available', return_value=True)
+    def test_environment_detection_logging(self, mock_cuda):
         """Test that environment detection is properly logged."""
-        with patch('torch.cuda.is_available', return_value=True):
-            with patch('src.book_to_essay.config.HAS_BITSANDBYTES', True):
-                # Reset the config module to trigger environment detection
-                import importlib
-                import src.book_to_essay.config
-                importlib.reload(src.book_to_essay.config)
-                
-                # Check if environment detection was logged
-                env_logs = [msg for msg in self.log_messages if "Environment detected" in msg]
-                self.assertTrue(any(env_logs))
-                self.assertIn("GPU=True", env_logs[0])
-                self.assertIn("BitsAndBytes=True", env_logs[0])
+        # Reset the config module to trigger environment detection
+        import importlib
+        import src.book_to_essay.config
+        importlib.reload(src.book_to_essay.config)
+        
+        # Check if environment detection was logged
+        env_logs = [msg for msg in self.log_messages if "Environment detected" in msg]
+        self.assertTrue(any(env_logs))
+        self.assertIn("GPU=True", env_logs[0])
+        self.assertIn("BitsAndBytes=True", env_logs[0])
 
     def test_gpu_quantization_config(self):
         """Test 4-bit quantization config when GPU and bitsandbytes are available."""
@@ -111,6 +115,7 @@ class TestQuantization(unittest.TestCase):
     def tearDown(self):
         # Remove our test handler
         logging.getLogger().removeHandler(self.test_handler)
+        logging.getLogger().removeHandler(self.handler)
 
 if __name__ == '__main__':
     unittest.main()
