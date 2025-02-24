@@ -7,5 +7,8 @@ pymupdf==1.23.7
 ebooklib==0.18
 beautifulsoup4==4.12.2
 accelerate==0.25.0
-scipy>=1.9.0  # Required for bitsandbytes
-bitsandbytes==0.41.3
+scipy==1.11.4  # Required for bitsandbytes, using newer version with pre-built wheels
+bitsandbytes==0.39.0  # Required for 4-bit quantization
+psutil==5.9.0  # For memory monitoring
+pytest==8.2.0  # For testing
+pytest-mock==3.12.0  # For mocking in tests
