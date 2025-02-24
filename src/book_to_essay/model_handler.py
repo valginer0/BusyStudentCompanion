@@ -33,15 +33,6 @@ class DeepSeekHandler:
                 **QUANT_CONFIG["load_config"]
             )
             
-            # Apply post-loading quantization if needed
-            if QUANT_CONFIG["post_load_quantize"] is not None:
-                logger.info("Applying post-load quantization...")
-                self.model = torch.quantization.quantize_dynamic(
-                    self.model,
-                    QUANT_CONFIG["post_load_quantize"]["target_modules"],
-                    dtype=QUANT_CONFIG["post_load_quantize"]["dtype"]
-                )
-            
             logger.info("Model loaded successfully")
             
         except Exception as e:
