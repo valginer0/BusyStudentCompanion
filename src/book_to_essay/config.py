@@ -60,10 +60,13 @@ class QuantizationConfig:
                 "method": "8bit_cpu",
                 "load_config": {
                     "device_map": "cpu",
-                    "load_in_8bit": True,
+                    "torch_dtype": torch.float32,  # Load in FP32 first
                     "low_cpu_mem_usage": True
                 },
-                "post_load_quantize": None
+                "post_load_quantize": {
+                    "dtype": torch.qint8,
+                    "target_modules": [torch.nn.Linear, torch.nn.Conv1d, torch.nn.Conv2d]
+                }
             }
         else:
             logger.info("Using 16-bit floating point (GPU)")
