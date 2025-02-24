@@ -55,7 +55,8 @@ On the first run, the application will:
 
 1. Start the web interface:
 ```bash
-streamlit run src/book_to_essay/streamlit_app.py
+# Add project root to PYTHONPATH and run the app
+PYTHONPATH=$PYTHONPATH:$(pwd) streamlit run src/book_to_essay/streamlit_app.py
 ```
 
 2. Upload your book file (PDF, EPUB, or DOCX format)
