@@ -39,7 +39,88 @@ class DeepSeekHandler:
             logger.error(f"Error initializing model: {str(e)}")
             raise RuntimeError(f"Failed to initialize model: {str(e)}")
         
-    def generate_essay(self, context: str, prompt: str, max_length: int = MAX_LENGTH) -> str:
+    def process_text(self, text: str) -> None:
+        """Process input text and store it for later use."""
+        logger.info("Processing text input...")
+        
+        # Get the tokenizer's maximum length
+        max_length = self.tokenizer.model_max_length
+        if max_length > 4096:  # Some models report very large max lengths
+            max_length = 4096
+            
+        # Calculate chunk size with overlap
+        chunk_size = max_length - 200  # Leave room for prompts and overlap
+        overlap_size = 100  # Number of tokens to overlap between chunks
+        
+        # Tokenize the entire text
+        tokens = self.tokenizer.encode(text)
+        
+        # Split into chunks with overlap
+        chunks = []
+        start = 0
+        while start < len(tokens):
+            end = min(start + chunk_size, len(tokens))
+            if start > 0:  # Not the first chunk
+                start = start - overlap_size
+            chunk = tokens[start:end]
+            chunks.append(chunk)
+            start = end
+            
+        # Convert chunks back to text
+        text_chunks = [self.tokenizer.decode(chunk) for chunk in chunks]
+        
+        # Store chunks for later use
+        self.text_chunks = text_chunks
+        logger.info(f"Text split into {len(text_chunks)} chunks")
+
+    def generate_essay(self, topic: str, word_limit: int = 500) -> str:
+        """Generate an essay on the given topic using the loaded text."""
+        if not hasattr(self, 'text_chunks'):
+            raise ValueError("No text has been loaded. Please load text first.")
+
+        logger.info(f"Generating essay on topic: {topic}")
+        
+        # Process each chunk
+        summaries = []
+        for i, chunk in enumerate(self.text_chunks):
+            logger.info(f"Processing chunk {i+1}/{len(self.text_chunks)}")
+            
+            prompt = f"""Based on the following text, help me write part of an essay about {topic}.
+            Extract only the relevant information from this part of the text.
+            Text: {chunk}"""
+            
+            try:
+                response = self.model.generate(
+                    **self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=4096),
+                    max_new_tokens=500,
+                    temperature=0.7,
+                    do_sample=True
+                )
+                summary = self.tokenizer.decode(response[0], skip_special_tokens=True)
+                summaries.append(summary)
+            except Exception as e:
+                logger.error(f"Error processing chunk {i+1}: {str(e)}")
+                continue
+
+        # Combine summaries into final essay
+        combined_prompt = f"""Using the following extracted information, write a coherent essay about {topic}.
+        Keep it under {word_limit} words and make it flow naturally.
+        Information: {' '.join(summaries)}"""
+        
+        try:
+            response = self.model.generate(
+                **self.tokenizer(combined_prompt, return_tensors="pt", truncation=True, max_length=4096),
+                max_new_tokens=min(1500, word_limit * 2),  # Reasonable limit based on word_limit
+                temperature=0.7,
+                do_sample=True
+            )
+            essay = self.tokenizer.decode(response[0], skip_special_tokens=True)
+            return essay
+        except Exception as e:
+            logger.error(f"Error generating final essay: {str(e)}")
+            raise
+
+    def generate_essay_original(self, context: str, prompt: str, max_length: int = MAX_LENGTH) -> str:
         """Generate an essay using the DeepSeek model."""
         instruction = f"""You are a skilled academic writer. {prompt}
 

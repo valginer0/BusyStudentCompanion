@@ -8,6 +8,9 @@ import re
 from typing import List, Optional, Dict, Any
 from src.book_to_essay.model_handler import DeepSeekHandler
 from src.book_to_essay.cache_manager import CacheManager
+import logging
+
+logger = logging.getLogger(__name__)
 
 class AIBookEssayGenerator:
     def __init__(self):
@@ -63,18 +66,18 @@ class AIBookEssayGenerator:
         def process_txt(file_path):
             try:
                 with open(file_path, 'r', encoding='utf-8') as file:
-                    content = file.read()
-                    if not content.strip():
-                        raise ValueError("File is empty")
-                    return content
+                    text = file.read()
+                    self.model.process_text(text)
+                    return text
             except UnicodeDecodeError:
                 # Try different encodings
                 for encoding in ['latin-1', 'cp1252', 'iso-8859-1']:
                     try:
                         with open(file_path, 'r', encoding=encoding) as file:
-                            content = file.read()
-                            if content.strip():
-                                return content
+                            text = file.read()
+                            if text.strip():
+                                self.model.process_text(text)
+                                return text
                     except UnicodeDecodeError:
                         continue
                 raise ValueError(f"Could not decode file {file_path} with any supported encoding")
@@ -91,6 +94,7 @@ class AIBookEssayGenerator:
                     page = pdf_document.load_page(page_num)
                     content += page.get_text() + "\n"
                 pdf_document.close()
+                self.model.process_text(content)
                 if not content.strip():
                     raise ValueError("PDF appears to be empty or unreadable")
                 return content
@@ -109,6 +113,7 @@ class AIBookEssayGenerator:
                     if item.get_type() == ebooklib.ITEM_DOCUMENT:
                         soup = BeautifulSoup(item.get_content(), 'html.parser')
                         content += soup.get_text() + "\n"
+                self.model.process_text(content)
                 if not content.strip():
                     raise ValueError("EPUB appears to be empty or contains no readable text")
                 return content
@@ -163,7 +168,11 @@ Begin the essay:"""
             return cached_essay
         
         # Generate essay with the model
-        essay = self.model.generate_essay(context, enhanced_prompt)
+        try:
+            essay = self.model.generate_essay(context, enhanced_prompt)
+        except Exception as e:
+            logger.error(f"Error generating essay: {str(e)}")
+            raise
         
         # Cache the generated essay
         self.cache_manager.cache_model_output(enhanced_prompt, context, essay)
