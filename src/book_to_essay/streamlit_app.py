@@ -3,6 +3,12 @@ import streamlit as st
 from pathlib import Path
 import tempfile
 import os
+import io
+from docx import Document
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph
+from reportlab.lib.styles import getSampleStyleSheet
 from src.book_to_essay.ai_book_to_essay_generator import AIBookEssayGenerator
 from src.book_to_essay.config import SUPPORTED_FORMATS, MAX_UPLOAD_SIZE_MB
 
@@ -11,6 +17,38 @@ st.set_page_config(
     page_icon="📚",
     layout="wide"
 )
+
+def create_docx(text):
+    """Create a Word document from text."""
+    doc = Document()
+    doc.add_heading('Generated Essay', 0)
+    doc.add_paragraph(text)
+    
+    # Save to bytes buffer
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+def create_pdf(text):
+    """Create a PDF document from text."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+    flowables = []
+    
+    # Add title
+    title = Paragraph("Generated Essay", styles['Title'])
+    flowables.append(title)
+    
+    # Add content
+    content = Paragraph(text, styles['Normal'])
+    flowables.append(content)
+    
+    # Build PDF
+    doc.build(flowables)
+    buffer.seek(0)
+    return buffer.getvalue()
 
 def main():
     st.title("📚 Book to Essay Generator")
@@ -96,16 +134,18 @@ def main():
             
             col_word, col_pdf = st.columns(2)
             with col_word:
+                docx_data = create_docx(st.session_state.essay)
                 st.download_button(
                     "Download as Word",
-                    st.session_state.essay,
+                    docx_data,
                     file_name="generated_essay.docx",
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 )
             with col_pdf:
+                pdf_data = create_pdf(st.session_state.essay)
                 st.download_button(
                     "Download as PDF",
-                    st.session_state.essay,
+                    pdf_data,
                     file_name="generated_essay.pdf",
                     mime="application/pdf"
                 )
