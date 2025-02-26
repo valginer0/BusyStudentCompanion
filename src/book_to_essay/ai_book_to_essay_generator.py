@@ -23,7 +23,10 @@ class AIBookEssayGenerator:
     def model(self):
         """Lazy loading of the model to save memory until needed."""
         if self._model is None:
+            logger.info("Creating new DeepSeekHandler instance")
             self._model = DeepSeekHandler()
+        else:
+            logger.info("Using existing DeepSeekHandler instance")
         return self._model
 
     def _process_file_content(self, file_path: str, processor_func) -> Dict[str, Any]:
@@ -67,6 +70,7 @@ class AIBookEssayGenerator:
             try:
                 with open(file_path, 'r', encoding='utf-8') as file:
                     text = file.read()
+                    logger.info(f"Processing text with model instance {id(self.model)}")
                     self.model.process_text(text)
                     return text
             except UnicodeDecodeError:
@@ -76,6 +80,7 @@ class AIBookEssayGenerator:
                         with open(file_path, 'r', encoding=encoding) as file:
                             text = file.read()
                             if text.strip():
+                                logger.info(f"Processing text with model instance {id(self.model)}")
                                 self.model.process_text(text)
                                 return text
                     except UnicodeDecodeError:
@@ -169,7 +174,7 @@ Begin the essay:"""
         
         # Generate essay with the model
         try:
-            essay = self.model.generate_essay(context, enhanced_prompt)
+            essay = self.model.generate_essay_original(context, enhanced_prompt)
         except Exception as e:
             logger.error(f"Error generating essay: {str(e)}")
             raise

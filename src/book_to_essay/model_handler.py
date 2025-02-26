@@ -33,6 +33,9 @@ class DeepSeekHandler:
                 **QUANT_CONFIG["load_config"]
             )
             
+            # Initialize text_chunks
+            self.text_chunks = []
+            
             logger.info("Model loaded successfully")
             
         except Exception as e:
@@ -54,6 +57,7 @@ class DeepSeekHandler:
         
         # Tokenize the entire text
         tokens = self.tokenizer.encode(text)
+        logger.info(f"Text tokenized into {len(tokens)} tokens")
         
         # Split into chunks with overlap
         chunks = []
@@ -71,14 +75,17 @@ class DeepSeekHandler:
         
         # Store chunks for later use
         self.text_chunks = text_chunks
-        logger.info(f"Text split into {len(text_chunks)} chunks")
+        logger.info(f"Text split into {len(text_chunks)} chunks and stored in self.text_chunks")
+        logger.info(f"Text chunks assignment: {self.text_chunks}")
 
     def generate_essay(self, topic: str, word_limit: int = 500) -> str:
         """Generate an essay on the given topic using the loaded text."""
         if not hasattr(self, 'text_chunks'):
             raise ValueError("No text has been loaded. Please load text first.")
 
-        logger.info(f"Generating essay on topic: {topic}")
+        # Ensure word_limit is an integer
+        word_limit = int(word_limit)
+        logger.info(f"Generating essay on topic: {topic} with word limit: {word_limit}")
         
         # Process each chunk
         summaries = []
