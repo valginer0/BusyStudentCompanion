@@ -128,61 +128,59 @@ class AIBookEssayGenerator:
         self._process_file_content(file_path, process_epub)
 
     def generate_essay(self, prompt: str, word_limit: int = 500, style: str = "academic") -> str:
-        """Generate an essay using the DeepSeek model with caching."""
-        # Prepare MLA source citations
-        mla_citations = []
-        for source in self.sources:
-            # Extract author from filename (assuming format: Author - Title.ext)
-            author = source['name'].split(' - ')[0] if ' - ' in source['name'] else "Unknown Author"
-            title = source['name'].split(' - ')[1].rsplit('.', 1)[0] if ' - ' in source['name'] else source['name']
+        """Generate an essay using the DeepSeek model with chunking and MLA formatting.
+        
+        This method uses text chunking to handle large documents efficiently while
+        maintaining proper MLA formatting and citations.
+        
+        Args:
+            prompt: The essay topic or prompt
+            word_limit: Maximum word count for the essay
+            style: Writing style (academic, analytical, argumentative, expository)
             
-            # Format MLA citation based on source type
-            if source['type'] == 'pdf':
-                citation = f"{author}. \"{title}.\" PDF file."
-            elif source['type'] == 'epub':
-                citation = f"{author}. \"{title}.\" E-book."
-            else:  # txt and others
-                citation = f"{author}. \"{title}.\""
+        Returns:
+            A formatted essay with MLA citations
+        """
+        # Ensure we have content to process
+        if not self.content:
+            raise ValueError("No content has been loaded. Please load at least one file first.")
             
-            mla_citations.append(citation)
-        
-        # Prepare context with source information and citation instructions
-        context = "Source Materials:\n"
-        for source in self.sources:
-            context += f"- {source['name']} ({source['type']})\n"
-        context += f"\nContent:\n{self.content}\n"
-        
-        # Add citation instructions to prompt
-        enhanced_prompt = f"""Write an essay addressing this prompt: {prompt}
-
-Requirements:
-1. Include relevant quotes from the source materials
-2. Use MLA in-text citations (Author Page) for each quote
-3. The essay should be approximately {word_limit} words
-4. Use {style} writing style
-5. End with a Works Cited section in MLA format
-
-Source Citations for Works Cited:
-{chr(10).join(mla_citations)}
-
-Begin the essay:"""
-        
-        # Check cache for existing essay
-        cached_essay = self.cache_manager.get_cached_model_output(enhanced_prompt, context)
+        # Check cache for existing essay with these parameters
+        cache_key = f"{prompt}_{word_limit}_{style}_{','.join([s['name'] for s in self.sources])}"
+        cached_essay = self.cache_manager.get_cached_model_output(cache_key, self.content)
         if cached_essay is not None:
             return cached_essay
         
-        # Generate essay with the model
+        # Generate essay with the enhanced model method
         try:
-            essay = self.model.generate_essay_original(context, enhanced_prompt)
+            logger.info(f"Generating essay with prompt: {prompt}, word_limit: {word_limit}, style: {style}")
+            
+            # Ensure the model has processed the text
+            if not hasattr(self.model, 'text_chunks') or not self.model.text_chunks:
+                logger.info("Processing text content with model")
+                self.model.process_text(self.content)
+                
+            # Double-check that text chunks were created
+            if not self.model.text_chunks:
+                logger.error("Failed to create text chunks. Content may be empty or too short.")
+                raise ValueError("Failed to process text content. Please check the input file.")
+                
+            logger.info(f"Model has {len(self.model.text_chunks)} text chunks to process")
+            
+            essay = self.model.generate_essay(
+                topic=prompt,
+                word_limit=word_limit,
+                style=style.lower(),
+                sources=self.sources
+            )
+            
+            # Cache the generated essay
+            self.cache_manager.cache_model_output(cache_key, self.content, essay)
+            
+            return essay
         except Exception as e:
             logger.error(f"Error generating essay: {str(e)}")
             raise
-        
-        # Cache the generated essay
-        self.cache_manager.cache_model_output(enhanced_prompt, context, essay)
-        
-        return essay
 
     def extract_quotes(self, num_quotes: int = 5) -> List[str]:
         """Extract relevant quotes from the content."""

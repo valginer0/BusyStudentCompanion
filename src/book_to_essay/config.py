@@ -27,7 +27,8 @@ except ImportError:
 logger.info(f"Environment detected: GPU={HAS_GPU}, BitsAndBytes={HAS_BITSANDBYTES}")
 
 # Model Settings
-MODEL_NAME = "deepseek-ai/deepseek-llm-7b-base"
+MODEL_NAME = "deepseek-ai/deepseek-coder-1.3b-base"  # Temporarily using smaller model for testing
+# MODEL_NAME = "deepseek-ai/deepseek-llm-7b-base"  # Original model (commented out for testing)
 MAX_LENGTH = 2048
 TEMPERATURE = 0.7
 
@@ -84,7 +85,7 @@ class QuantizationConfig:
 QUANT_CONFIG = QuantizationConfig.get_config()
 
 # Cache Settings
-CACHE_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'cache')
+CACHE_DIR = os.path.join(os.path.expanduser('~'), '.cache', 'busy_student_companion')
 MODEL_CACHE_DIR = os.path.join(CACHE_DIR, 'models')  # Specific directory for model files
 CONTENT_CACHE_DIR = os.path.join(CACHE_DIR, 'content')  # Directory for processed content
 os.makedirs(CACHE_DIR, exist_ok=True)
