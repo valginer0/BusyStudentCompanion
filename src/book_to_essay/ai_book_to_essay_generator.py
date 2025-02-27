@@ -21,10 +21,14 @@ class AIBookEssayGenerator:
 
     @property
     def model(self):
-        """Lazy loading of the model to save memory until needed."""
+        """Get the model handler, creating it if it doesn't exist."""
         if self._model is None:
-            logger.info("Creating new DeepSeekHandler instance")
-            self._model = DeepSeekHandler()
+            try:
+                logger.info("Creating new DeepSeekHandler instance")
+                self._model = DeepSeekHandler()
+            except Exception as e:
+                logger.error(f"Error initializing model: {str(e)}")
+                raise RuntimeError(f"Failed to initialize model: {str(e)}")
         else:
             logger.info("Using existing DeepSeekHandler instance")
         return self._model

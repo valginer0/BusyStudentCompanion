@@ -16,21 +16,34 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Check for GPU and bitsandbytes
-HAS_GPU = torch.cuda.is_available()
-HAS_BITSANDBYTES = False
 try:
-    import bitsandbytes as bnb
-    HAS_BITSANDBYTES = True
+    import torch
+    HAS_GPU = torch.cuda.is_available()
+    
+    # More robust check for bitsandbytes
+    HAS_BITSANDBYTES = False
+    try:
+        import bitsandbytes as bnb
+        HAS_BITSANDBYTES = True
+    except ImportError:
+        pass
 except ImportError:
-    pass
+    HAS_GPU = False
+    HAS_BITSANDBYTES = False
+    logger.warning("PyTorch not available, defaulting to CPU mode")
 
 logger.info(f"Environment detected: GPU={HAS_GPU}, BitsAndBytes={HAS_BITSANDBYTES}")
 
 # Model Settings
-MODEL_NAME = "deepseek-ai/deepseek-coder-1.3b-base"  # Temporarily using smaller model for testing
-# MODEL_NAME = "deepseek-ai/deepseek-llm-7b-base"  # Original model (commented out for testing)
+MODEL_NAME = "deepseek-ai/deepseek-llm-7b-base"  # Using the larger DeepSeek model for better quality
+# MODEL_NAME = "deepseek-ai/deepseek-coder-1.3b-base"  # Previous model (commented out)
+# MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.1"  # Mistral model (commented out)
 MAX_LENGTH = 2048
 TEMPERATURE = 0.7
+
+# Chunking settings for large texts
+MAX_CHUNK_SIZE = 1500  # Maximum size of text chunks for processing large documents
+MAX_CHUNKS_PER_ANALYSIS = 5  # Maximum number of chunks to analyze for a single essay
 
 class QuantizationConfig:
     """Configuration for model quantization."""

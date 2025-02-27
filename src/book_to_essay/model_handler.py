@@ -1,10 +1,14 @@
-"""Handler for loading and managing the DeepSeek model."""
+"""Handler for loading and managing the language model."""
 import logging
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 import torch
 import torch.quantization
+import hashlib
+import os
+import pickle
+from pathlib import Path
 from src.book_to_essay.config import (
-    MODEL_NAME, MAX_LENGTH, TEMPERATURE,
+    MODEL_NAME, MAX_LENGTH, TEMPERATURE, MAX_CHUNK_SIZE, MAX_CHUNKS_PER_ANALYSIS,
     MODEL_CACHE_DIR, QUANT_CONFIG
 )
 from typing import List, Dict
@@ -12,12 +16,12 @@ from typing import List, Dict
 logger = logging.getLogger(__name__)
 
 class DeepSeekHandler:
-    """Handler for the DeepSeek model."""
+    """Handler for the language model."""
     
     def __init__(self):
         """Initialize the model and tokenizer with appropriate quantization."""
         try:
-            logger.info("Loading model and tokenizer...")
+            logger.info(f"Loading model and tokenizer: {MODEL_NAME}")
             
             # Load tokenizer
             logger.info("Loading tokenizer...")
@@ -34,10 +38,33 @@ class DeepSeekHandler:
                 **QUANT_CONFIG["load_config"]
             )
             
+            # Apply post-load quantization if specified
+            if QUANT_CONFIG.get("post_load_quantize"):
+                logger.info("Applying post-load quantization...")
+                config = QUANT_CONFIG["post_load_quantize"]
+                if config:
+                    # Apply dynamic quantization for CPU
+                    if QUANT_CONFIG["method"] == "8bit_cpu":
+                        logger.info("Applying dynamic quantization for CPU...")
+                        self.model = torch.quantization.quantize_dynamic(
+                            self.model, 
+                            {torch.nn.Linear}, 
+                            dtype=torch.qint8
+                        )
+            
             # Initialize text_chunks
             self.text_chunks = []
             
+            # Initialize chunk cache
+            self.chunk_cache_dir = Path(os.path.join(MODEL_CACHE_DIR, "chunk_cache"))
+            self.chunk_cache_dir.mkdir(parents=True, exist_ok=True)
+            
             logger.info("Model loaded successfully")
+            
+            # Set model to evaluation mode for inference
+            self.model.eval()
+            # Disable gradient calculation for inference
+            torch.set_grad_enabled(False)
             
         except Exception as e:
             logger.error(f"Error initializing model: {str(e)}")
@@ -51,37 +78,84 @@ class DeepSeekHandler:
             
         logger.info(f"Processing text with {len(text)} characters")
         
-        # Get the tokenizer's maximum length
-        max_length = self.tokenizer.model_max_length
-        if max_length > 4096:  # Some models report very large max lengths
-            max_length = 4096
+        # Clear existing chunks
+        self.text_chunks = []
+        
+        # Split text into manageable chunks for processing
+        if len(text) > MAX_CHUNK_SIZE * 2:  # Only chunk if text is significantly large
+            logger.info(f"Text is large, splitting into chunks of max {MAX_CHUNK_SIZE} characters")
             
-        # Calculate chunk size with overlap
-        chunk_size = max_length - 200  # Leave room for prompts and overlap
-        overlap_size = 100  # Number of tokens to overlap between chunks
-        
-        # Tokenize the entire text
-        tokens = self.tokenizer.encode(text)
-        logger.info(f"Text tokenized into {len(tokens)} tokens")
-        
-        # Split into chunks with overlap
-        chunks = []
-        start = 0
-        while start < len(tokens):
-            end = min(start + chunk_size, len(tokens))
-            if start > 0:  # Not the first chunk
-                start = start - overlap_size
-            chunk = tokens[start:end]
-            chunks.append(chunk)
-            start = end
+            # Split by paragraphs first
+            paragraphs = text.split('\n\n')
+            current_chunk = ""
             
-        # Convert chunks back to text
-        text_chunks = [self.tokenizer.decode(chunk) for chunk in chunks]
-        
-        # Store chunks for later use
-        self.text_chunks = text_chunks
-        logger.info(f"Text split into {len(text_chunks)} chunks and stored in self.text_chunks")
-        logger.info(f"Text chunks assignment: {self.text_chunks}")
+            for paragraph in paragraphs:
+                # If adding this paragraph would exceed chunk size, store current chunk and start new one
+                if len(current_chunk) + len(paragraph) > MAX_CHUNK_SIZE and current_chunk:
+                    self.text_chunks.append(current_chunk)
+                    current_chunk = paragraph
+                else:
+                    # Add paragraph separator if not the first paragraph in chunk
+                    if current_chunk:
+                        current_chunk += "\n\n" + paragraph
+                    else:
+                        current_chunk = paragraph
+            
+            # Add the last chunk if not empty
+            if current_chunk:
+                self.text_chunks.append(current_chunk)
+                
+            # If we have too many chunks, select representative ones
+            if len(self.text_chunks) > MAX_CHUNKS_PER_ANALYSIS:
+                logger.info(f"Too many chunks ({len(self.text_chunks)}), selecting {MAX_CHUNKS_PER_ANALYSIS} representative chunks")
+                # Select chunks evenly distributed throughout the text
+                step = len(self.text_chunks) / MAX_CHUNKS_PER_ANALYSIS
+                selected_chunks = []
+                for i in range(MAX_CHUNKS_PER_ANALYSIS):
+                    idx = min(int(i * step), len(self.text_chunks) - 1)
+                    selected_chunks.append(self.text_chunks[idx])
+                self.text_chunks = selected_chunks
+        else:
+            # For smaller texts, just use the whole text as a single chunk
+            self.text_chunks = [text]
+            
+        logger.info(f"Text processed into {len(self.text_chunks)} chunks")
+
+    def _get_chunk_cache_key(self, chunk: str, topic: str, style: str, word_limit: int) -> str:
+        """Generate a cache key for a chunk based on its content and generation parameters."""
+        # Create a unique hash based on chunk content and generation parameters
+        cache_key_data = f"{chunk}_{topic}_{style}_{word_limit}_{MODEL_NAME}"
+        return hashlib.md5(cache_key_data.encode()).hexdigest()
+    
+    def _get_chunk_cache_path(self, cache_key: str) -> Path:
+        """Get the cache file path for a chunk analysis."""
+        return self.chunk_cache_dir / f"{cache_key}.pkl"
+    
+    def _get_cached_chunk_analysis(self, chunk: str, topic: str, style: str, word_limit: int) -> str:
+        """Get cached chunk analysis if it exists."""
+        try:
+            cache_key = self._get_chunk_cache_key(chunk, topic, style, word_limit)
+            cache_path = self._get_chunk_cache_path(cache_key)
+            
+            if cache_path.exists():
+                logger.info(f"Using cached chunk analysis for key: {cache_key[:8]}...")
+                with open(cache_path, 'rb') as f:
+                    return pickle.load(f)
+        except Exception as e:
+            logger.error(f"Error accessing chunk cache: {str(e)}")
+        return None
+    
+    def _cache_chunk_analysis(self, chunk: str, topic: str, style: str, word_limit: int, analysis: str):
+        """Cache chunk analysis for future use."""
+        try:
+            cache_key = self._get_chunk_cache_key(chunk, topic, style, word_limit)
+            cache_path = self._get_chunk_cache_path(cache_key)
+            
+            with open(cache_path, 'wb') as f:
+                pickle.dump(analysis, f)
+            logger.info(f"Cached chunk analysis with key: {cache_key[:8]}...")
+        except Exception as e:
+            logger.error(f"Error caching chunk analysis: {str(e)}")
 
     def generate_essay(self, topic: str, word_limit: int = 500, style: str = "academic", sources: List[Dict] = None) -> str:
         """Generate an essay on the given topic using the loaded text with MLA formatting.
@@ -125,6 +199,13 @@ class DeepSeekHandler:
         for i, chunk in enumerate(self.text_chunks):
             logger.info(f"Processing chunk {i+1}/{len(self.text_chunks)}")
             
+            # Check if we have a cached analysis for this chunk
+            cached_analysis = self._get_cached_chunk_analysis(chunk, topic, style, word_limit)
+            if cached_analysis:
+                chunk_analyses.append(cached_analysis)
+                logger.info(f"Using cached analysis for chunk {i+1}")
+                continue
+            
             # Include source information and MLA requirements in the chunk prompt
             source_info = ""
             if sources:
@@ -132,23 +213,46 @@ class DeepSeekHandler:
                 for source in sources:
                     source_info += f"- {source['name']} ({source['type']})\n"
             
-            # Improved chunk analysis prompt
-            prompt = f"""Analyze this excerpt from the text regarding the theme of "{topic}".
-            Extract relevant information, quotes, and evidence that could support an {style} essay.
-            Focus only on content relevant to "{topic}".
-            
-            {source_info}
-            Text excerpt: {chunk}"""
+            # Improved chunk analysis prompt for Mistral model
+            prompt = f"""<s>[INST] You are a literary analysis expert. Analyze the following excerpt from a text regarding {topic}.
+
+INSTRUCTIONS:
+1. Extract key quotes, themes, and evidence related to {topic}
+2. Identify character actions and dialogue that illustrate {topic}
+3. Note literary devices used to convey {topic}
+4. Focus ONLY on content relevant to {topic}
+5. Format your response as a concise analysis
+
+{source_info}
+
+TEXT EXCERPT:
+{chunk}
+
+YOUR ANALYSIS: [/INST]"""
             
             try:
                 logger.info(f"Processing chunk {i+1} with {len(chunk)} characters")
+                inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=4096)
+                
+                # Move inputs to the same device as the model
+                device = next(self.model.parameters()).device
+                inputs = {k: v.to(device) for k, v in inputs.items()}
+                
                 response = self.model.generate(
-                    **self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=4096),
+                    **inputs,
                     max_new_tokens=min(500, word_limit),  
                     temperature=0.7,
                     do_sample=True
                 )
                 chunk_analysis = self.tokenizer.decode(response[0], skip_special_tokens=True)
+                
+                # Extract only the model's response
+                if "[/INST]" in chunk_analysis:
+                    chunk_analysis = chunk_analysis.split("[/INST]")[1].strip()
+                
+                # Cache the chunk analysis for future use
+                self._cache_chunk_analysis(chunk, topic, style, word_limit, chunk_analysis)
+                
                 chunk_analyses.append(chunk_analysis)
                 logger.info(f"Successfully processed chunk {i+1}")
             except Exception as e:
@@ -160,29 +264,34 @@ class DeepSeekHandler:
         if mla_citations:
             citations_text = "Works Cited:\n" + "\n".join(mla_citations)
         
-        # Improved final essay generation prompt
-        combined_prompt = f"""Write a {style} essay analyzing the theme of {topic} in the text.
+        # Improved final essay generation prompt for Mistral model
+        combined_prompt = f"""<s>[INST] You are a skilled academic writer creating a {style} essay about {topic} in the text.
 
-Requirements:
-1. The essay should be approximately {word_limit} words
+ESSAY REQUIREMENTS:
+1. Write approximately {word_limit} words
 2. Use {style} writing style
-3. Include relevant quotes from the source materials
-4. Use MLA in-text citations (Author Page) for each quote
-5. The essay should be thesis-driven, not a plot summary
+3. Begin with a clear thesis statement about {topic}
+4. Include relevant quotes with MLA in-text citations (Author Page)
+5. Make the essay thesis-driven, NOT a plot summary
 6. End with a Works Cited section
 
-Analysis from text excerpts:
+ANALYSIS FROM TEXT:
 {' '.join(chunk_analyses)}
 
-Write ONLY the essay content below. Do not include any instructions, explanations, or meta-commentary:
-"""
+WRITE THE COMPLETE ESSAY: [/INST]"""
         
         try:
             logger.info("Generating final essay with model...")
             # Generate the essay
+            inputs = self.tokenizer(combined_prompt, return_tensors="pt", truncation=True, max_length=4096)
+            
+            # Move inputs to the same device as the model
+            device = next(self.model.parameters()).device
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            
             response = self.model.generate(
-                **self.tokenizer(combined_prompt, return_tensors="pt", truncation=True, max_length=4096),
-                max_new_tokens=min(1000, word_limit * 2),
+                **inputs,
+                max_new_tokens=min(1500, word_limit * 3),  # Allow for longer essays
                 temperature=0.7,
                 do_sample=True
             )
@@ -192,8 +301,8 @@ Write ONLY the essay content below. Do not include any instructions, explanation
             logger.info(f"Raw essay generated with {len(essay)} characters")
             
             # Extract only the essay part (after the prompt)
-            if "Write ONLY the essay content below. Do not include any instructions, explanations, or meta-commentary:" in essay:
-                essay = essay.split("Write ONLY the essay content below. Do not include any instructions, explanations, or meta-commentary:")[1].strip()
+            if "[/INST]" in essay:
+                essay = essay.split("[/INST]")[1].strip()
             
             # Additional extraction logic to handle other potential formats
             # Remove any lines that look like instructions
