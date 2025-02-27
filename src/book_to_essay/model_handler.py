@@ -35,16 +35,16 @@ class DeepSeekHandler:
             self.model = AutoModelForCausalLM.from_pretrained(
                 MODEL_NAME,
                 cache_dir=MODEL_CACHE_DIR,
-                **QUANT_CONFIG["load_config"]
+                **QUANT_CONFIG.get("load_config", {})
             )
             
             # Apply post-load quantization if specified
-            if QUANT_CONFIG.get("post_load_quantize"):
+            if QUANT_CONFIG.get("post_load_quantize", False):
                 logger.info("Applying post-load quantization...")
-                config = QUANT_CONFIG["post_load_quantize"]
+                config = QUANT_CONFIG.get("post_load_quantize", {})
                 if config:
                     # Apply dynamic quantization for CPU
-                    if QUANT_CONFIG["method"] == "8bit_cpu":
+                    if QUANT_CONFIG.get("method") == "8bit_cpu":
                         logger.info("Applying dynamic quantization for CPU...")
                         self.model = torch.quantization.quantize_dynamic(
                             self.model, 
