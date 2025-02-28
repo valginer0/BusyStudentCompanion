@@ -303,6 +303,13 @@ YOUR ANALYSIS: [/INST]"""
         if mla_citations:
             citations_text = "Works Cited:\n" + "\n".join(mla_citations)
         
+        # Create source info for the final essay prompt
+        source_info = ""
+        if sources:
+            source_info = "Source Materials:\n"
+            for source in sources:
+                source_info += f"- {source['name']} ({source['type']})\n"
+        
         # Improved final essay generation prompt for Mistral model
         analysis_text = ' '.join(chunk_analyses)
         prompt = f"""<s>[INST] You are a professional essay writer. Write a {style} essay on {topic} using the following analysis of a text.
