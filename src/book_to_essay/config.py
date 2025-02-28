@@ -69,14 +69,10 @@ class QuantizationConfig:
                 "post_load_quantize": None
             }
         elif not HAS_GPU:
-            logger.info("Using 8-bit quantization (CPU)")
+            logger.info("Using standard CPU configuration (no quantization)")
             return {
-                "method": "8bit_cpu",
+                "method": "cpu",
                 "load_config": {
-                    "quantization_config": BitsAndBytesConfig(
-                        load_in_8bit=True,
-                        llm_int8_enable_fp32_cpu_offload=True
-                    ),
                     "device_map": "cpu",
                     "low_cpu_mem_usage": True
                 },
