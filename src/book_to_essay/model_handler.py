@@ -246,9 +246,16 @@ YOUR ANALYSIS: [/INST]"""
                 )
                 chunk_analysis = self.tokenizer.decode(response[0], skip_special_tokens=True)
                 
+                # Debug logging for chunk analysis
+                logger.info(f"Raw chunk analysis starts with: {chunk_analysis[:100]}...")
+                logger.info(f"Contains [/INST]? {'[/INST]' in chunk_analysis}")
+                
                 # Extract only the model's response
                 if "[/INST]" in chunk_analysis:
                     chunk_analysis = chunk_analysis.split("[/INST]")[1].strip()
+                    logger.info(f"After [/INST] extraction, chunk analysis starts with: {chunk_analysis[:100]}...")
+                else:
+                    logger.warning("Could not find [/INST] marker in the chunk analysis")
                 
                 # Cache the chunk analysis for future use
                 self._cache_chunk_analysis(chunk, topic, style, word_limit, chunk_analysis)
@@ -300,9 +307,16 @@ WRITE THE COMPLETE ESSAY: [/INST]"""
             essay = self.tokenizer.decode(response[0], skip_special_tokens=True)
             logger.info(f"Raw essay generated with {len(essay)} characters")
             
+            # Debug logging
+            logger.info(f"Raw essay starts with: {essay[:100]}...")
+            logger.info(f"Contains [/INST]? {'[/INST]' in essay}")
+            
             # Extract only the essay part (after the prompt)
             if "[/INST]" in essay:
                 essay = essay.split("[/INST]")[1].strip()
+                logger.info(f"After [/INST] extraction, essay starts with: {essay[:100]}...")
+            else:
+                logger.warning("Could not find [/INST] marker in the generated text")
             
             # Additional extraction logic to handle other potential formats
             # Remove any lines that look like instructions
@@ -310,11 +324,24 @@ WRITE THE COMPLETE ESSAY: [/INST]"""
             filtered_lines = []
             for line in lines:
                 # Skip lines that look like instructions
-                if line.strip().startswith("Write a paper on") or "should be" in line or "must use" in line:
+                if (line.strip().startswith("Write a paper on") or 
+                    "should be" in line or 
+                    "must use" in line or
+                    line.strip().startswith("INSTRUCTIONS:") or
+                    line.strip().startswith("1. Extract") or
+                    line.strip().startswith("2. Identify") or
+                    line.strip().startswith("3. Note") or
+                    line.strip().startswith("4. Focus") or
+                    line.strip().startswith("5. Format") or
+                    "Source Materials:" in line or
+                    "TEXT EXCERPT:" in line):
                     continue
                 filtered_lines.append(line)
             
             essay = '\n'.join(filtered_lines)
+            
+            # Log the filtered essay
+            logger.info(f"After filtering, essay starts with: {essay[:100]}...")
             
             # Add Works Cited if not already included
             if "Works Cited" not in essay and mla_citations:
