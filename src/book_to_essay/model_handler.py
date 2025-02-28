@@ -12,6 +12,7 @@ from src.book_to_essay.config import (
     MODEL_CACHE_DIR, QUANT_CONFIG
 )
 from typing import List, Dict
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -214,13 +215,13 @@ class DeepSeekHandler:
                     source_info += f"- {source['name']} ({source['type']})\n"
             
             # Improved chunk analysis prompt for Mistral model
-            prompt = f"""<s>[INST] You are a literary analysis expert. Analyze the following excerpt from a text regarding {topic}.
+            prompt = f"""<s>[INST] You are a literary analysis expert. Analyze the following excerpt from a text regarding '{topic}' (NOT about social media or data analysis).
 
 INSTRUCTIONS:
-1. Extract key quotes, themes, and evidence related to {topic}
-2. Identify character actions and dialogue that illustrate {topic}
-3. Note literary devices used to convey {topic}
-4. Focus ONLY on content relevant to {topic}
+1. Extract key quotes, themes, and evidence related to '{topic}'
+2. Identify character actions and dialogue that illustrate '{topic}'
+3. Note literary devices used to convey '{topic}'
+4. Focus ONLY on content relevant to '{topic}'
 5. Format your response as a concise analysis
 
 {source_info}
@@ -229,6 +230,9 @@ TEXT EXCERPT:
 {chunk}
 
 YOUR ANALYSIS: [/INST]"""
+
+            # Print the prompt for debugging
+            print(f"\nDEBUG - CHUNK ANALYSIS PROMPT:\n{prompt[:500]}...\n")
             
             try:
                 logger.info(f"Processing chunk {i+1} with {len(chunk)} characters")
@@ -257,6 +261,34 @@ YOUR ANALYSIS: [/INST]"""
                 else:
                     logger.warning("Could not find [/INST] marker in the chunk analysis")
                 
+                # Filter out instruction text and social media references from chunk analysis
+                instruction_keywords = [
+                    "INSTRUCTIONS:", "Extract key", "Identify character", "Note literary", 
+                    "Focus ONLY", "Format your", "Source Materials:", "TEXT EXCERPT:",
+                    "social media", "data points", "trends, statistics", "percentages"
+                ]
+                
+                # Split into lines and filter out instruction lines
+                chunk_lines = chunk_analysis.split('\n')
+                filtered_chunk_lines = []
+                
+                for line in chunk_lines:
+                    should_skip = False
+                    for keyword in instruction_keywords:
+                        if keyword.lower() in line.lower():
+                            should_skip = True
+                            break
+                    
+                    # Skip numbered list items that look like instructions
+                    if re.match(r'^\d+\.\s+(Extract|Identify|Note|Focus|Format)', line.strip()):
+                        should_skip = True
+                    
+                    if not should_skip:
+                        filtered_chunk_lines.append(line)
+                
+                chunk_analysis = '\n'.join(filtered_chunk_lines)
+                logger.info(f"After filtering, chunk analysis starts with: {chunk_analysis[:100]}...")
+                
                 # Cache the chunk analysis for future use
                 self._cache_chunk_analysis(chunk, topic, style, word_limit, chunk_analysis)
                 
@@ -272,25 +304,30 @@ YOUR ANALYSIS: [/INST]"""
             citations_text = "Works Cited:\n" + "\n".join(mla_citations)
         
         # Improved final essay generation prompt for Mistral model
-        combined_prompt = f"""<s>[INST] You are a skilled academic writer creating a {style} essay about {topic} in the text.
+        analysis_text = ' '.join(chunk_analyses)
+        prompt = f"""<s>[INST] You are a professional essay writer. Write a {style} essay on {topic} using the following analysis of a text.
 
-ESSAY REQUIREMENTS:
-1. Write approximately {word_limit} words
-2. Use {style} writing style
-3. Begin with a clear thesis statement about {topic}
-4. Include relevant quotes with MLA in-text citations (Author Page)
-5. Make the essay thesis-driven, NOT a plot summary
-6. End with a Works Cited section
+REQUIREMENTS:
+1. Write a {word_limit}-word {style} essay with a clear thesis
+2. Use MLA format with proper citations
+3. Include textual evidence and quotes from the source
+4. Analyze themes and literary devices, avoid plot summary
+5. Maintain academic tone and proper structure
 
-ANALYSIS FROM TEXT:
-{' '.join(chunk_analyses)}
+{source_info}
 
-WRITE THE COMPLETE ESSAY: [/INST]"""
+ANALYSIS NOTES:
+{analysis_text}
+
+Write a complete, well-structured essay: [/INST]"""
+
+        # Print the prompt for debugging
+        print(f"\nDEBUG - FINAL ESSAY PROMPT:\n{prompt[:500]}...\n")
         
         try:
             logger.info("Generating final essay with model...")
             # Generate the essay
-            inputs = self.tokenizer(combined_prompt, return_tensors="pt", truncation=True, max_length=4096)
+            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=4096)
             
             # Move inputs to the same device as the model
             device = next(self.model.parameters()).device
@@ -318,30 +355,90 @@ WRITE THE COMPLETE ESSAY: [/INST]"""
             else:
                 logger.warning("Could not find [/INST] marker in the generated text")
             
-            # Additional extraction logic to handle other potential formats
-            # Remove any lines that look like instructions
-            lines = essay.split('\n')
-            filtered_lines = []
-            for line in lines:
-                # Skip lines that look like instructions
-                if (line.strip().startswith("Write a paper on") or 
-                    "should be" in line or 
-                    "must use" in line or
-                    line.strip().startswith("INSTRUCTIONS:") or
-                    line.strip().startswith("1. Extract") or
-                    line.strip().startswith("2. Identify") or
-                    line.strip().startswith("3. Note") or
-                    line.strip().startswith("4. Focus") or
-                    line.strip().startswith("5. Format") or
-                    "Source Materials:" in line or
-                    "TEXT EXCERPT:" in line):
-                    continue
-                filtered_lines.append(line)
+            # Comprehensive filtering to remove all instruction text and prompt repetition
+            essay_lines = essay.split('\n')
+            filtered_essay_lines = []
             
-            essay = '\n'.join(filtered_lines)
+            # Patterns to identify and remove
+            instruction_patterns = [
+                r'^\[\d+\]', # Numbered requirements like [1], [2]
+                r'^REQUIREMENTS:', 
+                r'^INSTRUCTIONS:',
+                r'^Source Materials:',
+                r'^ANALYSIS NOTES:',
+                r'^TEXT EXCERPT:',
+                r'^Write a \d+-word',
+                r'^Use MLA format',
+                r'^Include textual evidence',
+                r'^Analyze themes',
+                r'^Maintain academic tone',
+                r'<s>\[INST\]',
+                r'</s>',
+                r'^The Project Gutenberg eBook',
+                r'^This ebook is for the use',
+                r'^\s*-\s*Shakespeare',
+                r'^\s*-\s*[^-]+\.txt \(txt\)',
+                r'^ANALYSIS FROM TEXT:',
+                r'^WRITE THE COMPLETE ESSAY:',
+                r'^HOMEWORK',
+                r'social media',
+                r'data points',
+                r'trends, statistics',
+                r'percentages'
+            ]
+            
+            # Skip sections between certain markers
+            skip_until_empty_line = False
+            in_instruction_block = False
+            
+            for line in essay_lines:
+                # Skip empty lines at the beginning
+                if not filtered_essay_lines and not line.strip():
+                    continue
+                
+                # Check if we should skip until an empty line
+                if skip_until_empty_line:
+                    if not line.strip():
+                        skip_until_empty_line = False
+                    continue
+                
+                # Check for section markers that indicate we should skip until empty line
+                if "Source Materials:" in line or "TEXT EXCERPT:" in line:
+                    skip_until_empty_line = True
+                    continue
+                
+                # Check for instruction block start
+                if line.strip().startswith("[1]") or line.strip().startswith("REQUIREMENTS:") or line.strip().startswith("INSTRUCTIONS:"):
+                    in_instruction_block = True
+                    continue
+                
+                # End of instruction block
+                if in_instruction_block and not line.strip():
+                    in_instruction_block = False
+                    continue
+                
+                # Skip lines in instruction block
+                if in_instruction_block:
+                    continue
+                
+                # Check against all patterns
+                should_skip = False
+                for pattern in instruction_patterns:
+                    if re.search(pattern, line):
+                        should_skip = True
+                        break
+                
+                if not should_skip:
+                    filtered_essay_lines.append(line)
+            
+            # Join the filtered lines
+            essay = '\n'.join(filtered_essay_lines)
+            
+            # Remove any remaining instruction text at the beginning
+            essay = re.sub(r'^.*?(?=\w{3,}.*?[.!?])', '', essay, flags=re.DOTALL)
             
             # Log the filtered essay
-            logger.info(f"After filtering, essay starts with: {essay[:100]}...")
+            logger.info(f"After comprehensive filtering, essay starts with: {essay[:100]}...")
             
             # Add Works Cited if not already included
             if "Works Cited" not in essay and mla_citations:
