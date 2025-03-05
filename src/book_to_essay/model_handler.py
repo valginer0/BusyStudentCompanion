@@ -215,22 +215,25 @@ class DeepSeekHandler:
                     source_info += f"- {source['name']} ({source['type']})\n"
             
             # Improved chunk analysis prompt for Mistral model with clearer separation
-            prompt = f"""<s>[INST] You are a literary analysis expert. Analyze the following excerpt from a text regarding '{topic}' (NOT about social media or data analysis).
+            prompt = f"""<s>[INST] You are a literary scholar analyzing literature. Your task is to extract and analyze material from this text excerpt that relates to '{topic}'. 
 
-INSTRUCTIONS:
-1. Extract key quotes, themes, and evidence related to '{topic}'
-2. Identify character actions and dialogue that illustrate '{topic}'
-3. Note literary devices used to convey '{topic}'
-4. Focus ONLY on content relevant to '{topic}'
-5. Format your response as a concise analysis
-6. DO NOT include these instructions in your response
-
-{source_info}
-
-TEXT EXCERPT:
+TEXT TO ANALYZE:
 {chunk}
 
-YOUR ANALYSIS (start directly with your analysis, do not repeat these instructions): [/INST]"""
+YOUR TASK:
+- Identify key quotes that illustrate '{topic}'
+- Note significant themes, motifs, and literary devices related to '{topic}'
+- Analyze character development and dialogue that relates to '{topic}'
+- Extract evidence for literary analysis about '{topic}'
+
+IMPORTANT: Your response must ONLY contain analysis content. DO NOT:
+- Repeat these instructions
+- Include phrases like "here is my analysis" or "as requested"
+- Include section headers like "Analysis:" or "Key Quotes:"
+- Refer to yourself, the reader, or the task itself
+- Mention social media, data analysis, AI, or homework
+
+Start directly with substantive analysis. [/INST]"""
 
             # Print the prompt for debugging
             print(f"\nDEBUG - CHUNK ANALYSIS PROMPT:\n{prompt[:500]}...\n")
@@ -314,24 +317,32 @@ YOUR ANALYSIS (start directly with your analysis, do not repeat these instructio
         
         # Improved final essay generation prompt for Mistral model with clearer separation
         analysis_text = ' '.join(chunk_analyses)
-        prompt = f"""<s>[INST] You are a professional essay writer. Write a {style} essay on {topic} using the following analysis of a text.
+        prompt = f"""<s>[INST] You are writing an essay as a literary scholar. Write a well-structured, {style} essay analyzing '{topic}' based on the provided literary analysis.
 
-REQUIREMENTS:
-1. Write a {word_limit}-word {style} essay with a clear thesis
-2. Use MLA format with proper citations
-3. Include textual evidence and quotes from the source
-4. Analyze themes and literary devices, avoid plot summary
-5. Maintain academic tone and proper structure
-6. DO NOT include these instructions in your response
-7. DO NOT mention social media, data analysis, or AI in your essay
-8. Start your essay directly with a proper introduction paragraph
-
-{source_info}
-
-ANALYSIS NOTES:
+CONTENT TO USE:
 {analysis_text}
 
-ESSAY (start directly with your essay, do not repeat these instructions): [/INST]"""
+ESSAY SPECIFICATIONS:
+- Length: Approximately {word_limit} words
+- Format: MLA style with proper citations
+- Style: {style.capitalize()}
+- Focus: Analysis of '{topic}' with textual evidence
+- Structure: Introduction with thesis, body paragraphs with evidence, and conclusion
+
+ESSAY STRUCTURE:
+- Introduction: Begin with context about the work and present a clear thesis statement about '{topic}'
+- Body: Develop 2-3 main points with textual evidence and analysis
+- Conclusion: Synthesize your analysis and explain the significance of '{topic}'
+
+IMPORTANT GUIDELINES:
+- AVOID plot summary - focus on analysis
+- INCLUDE specific textual evidence and quotes
+- USE MLA in-text citations when quoting (Author Page)
+- DO NOT discuss social media, data analysis, AI, or homework
+- DO NOT include any meta-text about writing an essay
+- DO NOT repeat these instructions or include explanatory text
+
+START YOUR ESSAY DIRECTLY with the introduction paragraph. [/INST]"""
 
         # Print the prompt for debugging
         print(f"\nDEBUG - FINAL ESSAY PROMPT:\n{prompt[:500]}...\n")
@@ -373,7 +384,9 @@ ESSAY (start directly with your essay, do not repeat these instructions): [/INST
                 essay_start_patterns = [
                     r'(?:In|The|This|Shakespeare|Romeo|Juliet|Love|Tragedy|Throughout|When|Many|One|[A-Z][a-z]+\'s).*?\.',  # Sentences starting with common words
                     r'[A-Z][a-z]+\'s.*?\.',  # Possessive proper noun followed by text
-                    r'[A-Z][a-z]+ [a-z]+ [a-z]+ [a-z]+.*?\.'  # Capitalized word followed by lowercase words
+                    r'[A-Z][a-z]+ [a-z]+ [a-z]+ [a-z]+.*?\.',  # Capitalized word followed by lowercase words
+                    r'(?:[A-Z][a-z]+ ){2,}.*?\.',  # Multiple capitalized words followed by text
+                    r'"[^"]+".*?\.',  # Quote followed by text
                 ]
                 
                 essay_start = None
@@ -396,13 +409,13 @@ ESSAY (start directly with your essay, do not repeat these instructions): [/INST
                     
                     # Skip lines that match these patterns
                     skip_patterns = [
-                        r'^\s*\d+\.', # Numbered items
-                        r'^\s*-\s+', # Bullet points
-                        r'^\s*REQUIREMENTS', 
+                        r'^\s*\d+\.',  # Numbered items
+                        r'^\s*-\s+',  # Bullet points
+                        r'^\s*REQUIREMENTS',
                         r'^\s*INSTRUCTIONS',
                         r'^\s*ANALYSIS',
-                        r'^\s*Source Materials',
-                        r'^\s*TEXT EXCERPT',
+                        r'^\s*Source Materials:',
+                        r'^\s*TEXT EXCERPT:',
                         r'^\s*<s>',
                         r'^\s*</s>',
                         r'^\s*\[INST\]',
@@ -423,7 +436,29 @@ ESSAY (start directly with your essay, do not repeat these instructions): [/INST
                         r'^\s*ESSAY',
                         r'start directly with',
                         r'do not repeat these instructions',
-                        r'do not include these instructions'
+                        r'do not include these instructions',
+                        r'^\s*CONTENT TO USE',
+                        r'^\s*ESSAY SPECIFICATIONS',
+                        r'^\s*ESSAY STRUCTURE',
+                        r'^\s*IMPORTANT GUIDELINES',
+                        r'^\s*START YOUR ESSAY',
+                        r'my analysis',
+                        r'as requested',
+                        r'as you requested',
+                        r'in this essay',
+                        r'in this analysis',
+                        r'First I will',
+                        r'I have analyzed',
+                        r'I have written',
+                        r'my response',
+                        r'the instructions',
+                        r'guidelines',
+                        r'Here is',
+                        r'based on your request',
+                        r'following your',
+                        r'as per your',
+                        r'as instructed',
+                        r'following the'
                     ]
                     
                     in_skip_section = False
@@ -433,7 +468,7 @@ ESSAY (start directly with your essay, do not repeat these instructions): [/INST
                             continue
                             
                         # Check if we're entering a section to skip
-                        if any(re.search(pattern, line) for pattern in skip_patterns):
+                        if any(re.search(pattern, line, re.IGNORECASE) for pattern in skip_patterns):
                             in_skip_section = True
                             continue
                             
@@ -447,7 +482,7 @@ ESSAY (start directly with your essay, do not repeat these instructions): [/INST
                             continue
                             
                         # Keep lines that start with capital letters and have reasonable length
-                        if re.match(r'^[A-Z]', line.strip()) and len(line.strip()) > 20:
+                        if re.match(r'^[A-Z"\']', line.strip()) and len(line.strip()) > 20:
                             filtered_lines.append(line)
                     
                     essay = '\n'.join(filtered_lines)
@@ -465,11 +500,39 @@ ESSAY (start directly with your essay, do not repeat these instructions): [/INST
                         valid_paragraphs = []
                         for para in paragraphs:
                             # Check if paragraph looks like proper essay content
-                            if len(para.strip()) > 100 and not any(re.search(pattern, para) for pattern in skip_patterns):
+                            if len(para.strip()) > 100 and not any(re.search(pattern, para, re.IGNORECASE) for pattern in skip_patterns):
                                 valid_paragraphs.append(para.strip())
                         
                         if valid_paragraphs:
                             essay = '\n\n'.join(valid_paragraphs)
+                
+                # Verify essay has proper structure
+                if essay and len(essay.strip()) >= 100:
+                    # Check if it has at least 3 paragraphs
+                    paragraphs = re.split(r'\n\s*\n', essay)
+                    if len(paragraphs) < 3:
+                        # Find paragraph boundaries using sentences
+                        sentences = re.findall(r'[A-Z][^.!?]*[.!?]', essay)
+                        if len(sentences) >= 9:  # Minimum 9 sentences for 3 paragraphs
+                            # Group into paragraphs of 3-5 sentences each
+                            reconstructed_paragraphs = []
+                            current_para = []
+                            
+                            for i, sentence in enumerate(sentences):
+                                current_para.append(sentence)
+                                
+                                # Start a new paragraph every 3-5 sentences
+                                if len(current_para) >= 3 and (len(current_para) >= 5 or i % 4 == 3):
+                                    reconstructed_paragraphs.append(' '.join(current_para))
+                                    current_para = []
+                            
+                            # Add any remaining sentences as the last paragraph
+                            if current_para:
+                                reconstructed_paragraphs.append(' '.join(current_para))
+                            
+                            if len(reconstructed_paragraphs) >= 3:
+                                essay = '\n\n'.join(reconstructed_paragraphs)
+                                logger.info("Reconstructed essay into structured paragraphs")
                 
                 logger.info(f"After comprehensive filtering, essay starts with: {essay[:100] if essay else 'EMPTY'}...")
                 
@@ -505,10 +568,14 @@ ESSAY (start directly with your essay, do not repeat these instructions): [/INST
         """
         logger.info(f"Generating fallback essay on topic: {topic}")
         
-        # Create a simpler prompt that's less likely to cause issues
-        prompt = f"""<s>[INST] Write a {word_limit}-word {style} essay about {topic}. Include a clear thesis, supporting evidence, and conclusion. [/INST]"""
+        # Multi-stage fallback approach
+        # Try several prompts with increasing specificity
         
+        # Stage 1: Simple, direct prompt with role
         try:
+            logger.info("Trying fallback stage 1: Simple prompt with role")
+            prompt = f"""<s>[INST] As an English literature professor, write a {word_limit}-word {style} essay analyzing {topic}. Follow MLA format with in-text citations. Begin directly with your essay. [/INST]"""
+            
             inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=1024)
             
             # Move inputs to the same device as the model
@@ -528,25 +595,137 @@ ESSAY (start directly with your essay, do not repeat these instructions): [/INST
             if "[/INST]" in fallback_essay:
                 fallback_essay = fallback_essay.split("[/INST]")[1].strip()
             
-            # Simple filtering for the fallback essay
+            # Basic filtering
             lines = fallback_essay.split('\n')
             filtered_lines = []
             for line in lines:
-                if line.strip() and not line.startswith('[') and not line.startswith('<'):
+                if line.strip() and not line.startswith('[') and not line.startswith('<') and not line.startswith('As an'):
                     filtered_lines.append(line)
             
             fallback_essay = '\n'.join(filtered_lines)
             
-            # If we still don't have a good essay, use a template
-            if not fallback_essay or len(fallback_essay) < 100:
-                fallback_essay = f"""The theme of {topic} is a significant area of literary analysis. When examining this theme, several key aspects emerge that warrant careful consideration. First, the way characters interact with {topic} reveals much about their motivations and development. Second, the author's use of literary devices highlights the importance of {topic} within the broader narrative. Finally, the resolution of conflicts related to {topic} demonstrates its central role in the work. Through careful analysis of these elements, we gain a deeper understanding of how {topic} functions as both a literary device and a thematic concern."""
-            
-            return fallback_essay
-            
+            # Check if it's a proper essay (at least 100 chars and starts with a capital letter)
+            if fallback_essay and len(fallback_essay.strip()) >= 100 and re.match(r'^[A-Z"]', fallback_essay.strip()):
+                return fallback_essay
+                
         except Exception as e:
-            logger.error(f"Error generating fallback essay: {str(e)}")
-            # Ultimate fallback if everything else fails
-            return f"""The theme of {topic} is a significant area of literary analysis. When examining this theme, several key aspects emerge that warrant careful consideration. First, the way characters interact with {topic} reveals much about their motivations and development. Second, the author's use of literary devices highlights the importance of {topic} within the broader narrative. Finally, the resolution of conflicts related to {topic} demonstrates its central role in the work. Through careful analysis of these elements, we gain a deeper understanding of how {topic} functions as both a literary device and a thematic concern."""
+            logger.error(f"Error in fallback stage 1: {str(e)}")
+        
+        # Stage 2: More structured prompt with essay structure guidance
+        try:
+            logger.info("Trying fallback stage 2: Structured prompt with essay guidance")
+            prompt = f"""<s>[INST] Write a clear, focused {style} essay on {topic}. 
+
+Your essay must include:
+1. Introduction with thesis statement
+2. Body paragraphs with evidence
+3. Conclusion
+
+Begin your essay immediately. [/INST]"""
+            
+            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=1024)
+            device = next(self.model.parameters()).device
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            
+            response = self.model.generate(
+                **inputs,
+                max_new_tokens=min(1000, word_limit * 2),
+                temperature=0.5,  # Even lower temperature
+                do_sample=True
+            )
+            
+            fallback_essay = self.tokenizer.decode(response[0], skip_special_tokens=True)
+            
+            # Extract after instruction
+            if "[/INST]" in fallback_essay:
+                fallback_essay = fallback_essay.split("[/INST]")[1].strip()
+            
+            # More aggressive filtering
+            lines = fallback_essay.split('\n')
+            filtered_lines = []
+            skip_patterns = [r'Your essay', r'Introduction', r'Body', r'Conclusion', r'must include', r'Begin your']
+            
+            for line in lines:
+                if line.strip() and not any(re.search(pattern, line) for pattern in skip_patterns):
+                    filtered_lines.append(line)
+            
+            fallback_essay = '\n'.join(filtered_lines)
+            
+            # Check if it's a proper essay
+            if fallback_essay and len(fallback_essay.strip()) >= 100:
+                return fallback_essay
+                
+        except Exception as e:
+            logger.error(f"Error in fallback stage 2: {str(e)}")
+        
+        # Stage 3: Template-based essay with topic-specific content
+        logger.info("Using template-based fallback essay for topic: " + topic)
+        
+        # Check topic category to determine template style
+        character_related = any(word in topic.lower() for word in ["character", "protagonist", "antagonist", "hero", "villain"])
+        theme_related = any(word in topic.lower() for word in ["theme", "motif", "symbolism", "imagery", "metaphor", "allegory"])
+        literary_device = any(word in topic.lower() for word in ["irony", "foreshadowing", "allusion", "personification", "tone", "mood"])
+        
+        # Select appropriate template based on topic type
+        if character_related:
+            return self._generate_character_essay_template(topic, style, word_limit)
+        elif theme_related:
+            return self._generate_theme_essay_template(topic, style, word_limit)
+        elif literary_device:
+            return self._generate_literary_device_essay_template(topic, style, word_limit)
+        else:
+            # General template
+            return f"""The analysis of {topic} reveals significant insights into the literary work. In examining this subject, several patterns emerge that warrant careful consideration and analysis. The author's treatment of {topic} serves multiple purposes within the narrative structure.
+
+First, {topic} functions as a central element that shapes character development throughout the work. The ways in which characters interact with and respond to {topic} reveals their motivations, values, and internal conflicts. This character-based analysis provides readers with a deeper understanding of the psychological dimensions at play.
+
+Second, {topic} operates as a thematic device that connects to broader ideas within the text. By examining how {topic} relates to the work's major themes, we can see the author's commentary on larger social, philosophical, or ethical questions. The textual evidence supports an interpretation that {topic} serves as both a literal element and a symbolic representation of these deeper concerns.
+
+Finally, the stylistic and structural choices surrounding {topic} demonstrate sophisticated literary craftsmanship. The author's use of language, imagery, and narrative structure in relation to {topic} enhances its significance and impact on the reader's experience. This technical analysis reveals the deliberate artistic choices that elevate the work beyond mere storytelling.
+
+Through careful examination of textual evidence, it becomes clear that {topic} functions as an essential component of the work's literary merit and meaning. This analysis demonstrates how a focused study of specific elements can illuminate our understanding of literature as both art and cultural expression."""
+
+    def _generate_character_essay_template(self, topic: str, style: str, word_limit: int) -> str:
+        """Generate a character-focused essay template."""
+        return f"""The character development related to {topic} represents a masterful example of literary craftsmanship. Through careful examination of the text, we can identify how the author constructs this character study to convey deeper thematic meaning and psychological insight.
+
+In the early portions of the narrative, {topic} is established through specific character actions and dialogue that reveal fundamental traits and motivations. The author's initial characterization creates a foundation upon which more complex development can build. These early scenes are crucial for understanding the character's journey and the narrative's overall trajectory.
+
+As the work progresses, complications arise that challenge and deepen our understanding of {topic}. The character's responses to conflict reveal layers of complexity that move beyond simplistic interpretations. Notable scenes demonstrating this include moments of internal conflict and decisive action that show character growth or revealing contradictions.
+
+The relationship between {topic} and other characters provides additional insight into the author's thematic concerns. These interpersonal dynamics highlight questions of identity, morality, and human connection that extend beyond the individual character study. Through these relationships, the author explores broader questions about human nature and social structures.
+
+By the work's conclusion, the development of {topic} has reached a resolution that reflects the author's overall literary vision. Whether through transformation, tragic realization, or confirmed identity, the character's journey illustrates core themes of the work. This resolution demonstrates how character development serves as a vehicle for the author's broader artistic and philosophical aims.
+
+This analysis of {topic} demonstrates how character study provides a lens through which to understand the work's literary merit and thematic depth. By examining specific textual elements related to characterization, we gain insight into both the technical craftsmanship and meaningful content of the literature."""
+
+    def _generate_theme_essay_template(self, topic: str, style: str, word_limit: int) -> str:
+        """Generate a theme-focused essay template."""
+        return f"""The thematic exploration of {topic} throughout the literary work reveals the author's artistic vision and philosophical concerns. By analyzing how this theme develops and functions, we gain insight into both the work's literary craftsmanship and its broader cultural significance.
+
+The introduction of {topic} as a thematic element begins subtly in the early portions of the work. Through carefully selected imagery, dialogue, and narrative focus, the author establishes this theme in ways that prepare readers for its fuller development. These initial instances may seem minor but provide essential foundation for the theme's evolution.
+
+As the narrative progresses, {topic} emerges more prominently through key scenes that directly engage with this thematic concern. The author employs literary techniques such as symbolism, contrast, and parallel structures to emphasize the theme's importance. Textual evidence demonstrates how characters' experiences and choices illuminate different facets of {topic}, creating a multidimensional thematic exploration.
+
+The author's treatment of {topic} connects to broader literary traditions and cultural contexts. By placing this thematic exploration within its historical and literary framework, we can better understand its significance and innovation. The work both draws upon established thematic patterns and contributes new perspectives to ongoing artistic and intellectual dialogues.
+
+The resolution of {topic} as a thematic element provides insight into the author's ultimate vision. Whether through reconciliation, tragic realization, or ambiguous conclusion, the final treatment of this theme reflects the work's philosophical stance. This thematic resolution demonstrates how literature can engage with complex ideas while maintaining artistic integrity.
+
+This analysis of {topic} as a central theme illustrates how literary works construct meaning through patterns of imagery, characterization, and narrative structure. By examining the specific textual elements that develop this theme, we appreciate both the technical sophistication and intellectual depth of the work."""
+
+    def _generate_literary_device_essay_template(self, topic: str, style: str, word_limit: int) -> str:
+        """Generate a literary device-focused essay template."""
+        return f"""The author's use of {topic} as a literary device demonstrates sophisticated artistic technique and contributes significantly to the work's meaning. Through careful analysis of how this device functions within the text, we can better understand both the formal craftsmanship and thematic purpose of the literature.
+
+The implementation of {topic} appears strategically throughout the narrative, creating patterns that reward close reading and analysis. The author deploys this literary technique with varying intensity and purpose, demonstrating masterful control of the narrative craft. Early instances establish the device's presence, while later occurrences build upon this foundation with increasing complexity.
+
+Specific examples of {topic} within the text reveal its multifaceted purpose. In several key passages, this literary device serves to illuminate character psychology, advance plot development, and reinforce thematic concerns simultaneously. The author's technical skill is evident in how seamlessly {topic} integrates into the narrative structure rather than appearing as a forced or artificial element.
+
+The relationship between {topic} and other literary elements creates a cohesive artistic vision. This device does not function in isolation but works in concert with characterization, setting, dialogue, and other narrative components. This integration demonstrates the author's holistic approach to literary creation, where technical devices serve the work's broader artistic aims.
+
+The significance of {topic} extends beyond technical achievement to influence the reader's experience and interpretation. This literary device shapes how readers engage with the text, directing attention, creating emotional responses, and guiding intellectual understanding. The effect on readers reveals how formal elements actively construct meaning rather than merely decorating content.
+
+This analysis of {topic} as a literary device demonstrates the inseparability of form and content in literature. By examining how technical aspects of writing contribute to meaning, we develop a deeper appreciation for literature as a carefully constructed art form that communicates through both what it says and how it is said."""
 
     def generate_essay_original(self, context: str, prompt: str, max_length: int = MAX_LENGTH) -> str:
         """Generate an essay using the DeepSeek model.
