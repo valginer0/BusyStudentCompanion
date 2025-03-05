@@ -477,8 +477,26 @@ START YOUR ESSAY DIRECTLY with the introduction paragraph. [/INST]"""
                         r'^\s*Create an essay.*',
                         r'^\s*Craft an essay.*',
                         r'^\s*Develop an essay.*',
-                        r'^\s*Compose an essay.*'
+                        r'^\s*Compose an essay.*',
+                        
+                        # Additional patterns to catch more instruction text
+                        r'^\s*Write a \d+',
+                        r'.*start directly with.*',
+                        r'.*do not repeat these instructions.*',
+                        r'.*please provide.*',
+                        r'.*ESSAY.*',
+                        r'.*MLA format.*',
+                        r'.*MLA citations.*',
+                        r'^.*instructions.*$',
+                        r'^.*prompt.*$',
+                        r'^.*TASK:.*$',
+                        r'^.*task is to.*$',
+                        r'^.*Assignment:.*$',
+                        r'^.*assigned.*$',
+                        r'^.*your job is to.*$'
                     ]
+                    
+                    logger.debug(f"Starting essay filtering with {len(lines)} lines, using {len(skip_patterns)} skip patterns")
                     
                     in_skip_section = False
                     for line in lines:
@@ -489,6 +507,7 @@ START YOUR ESSAY DIRECTLY with the introduction paragraph. [/INST]"""
                         # Check if we're entering a section to skip
                         if any(re.search(pattern, line, re.IGNORECASE) for pattern in skip_patterns):
                             in_skip_section = True
+                            logger.debug(f"Skipping section starting with: {line[:50]}...")
                             continue
                             
                         # End skip section on blank line
@@ -500,14 +519,22 @@ START YOUR ESSAY DIRECTLY with the introduction paragraph. [/INST]"""
                         if in_skip_section:
                             continue
                             
-                        # Keep lines that start with capital letters and have reasonable length
-                        if re.match(r'^[A-Z"\']', line.strip(), re.IGNORECASE) and len(line.strip()) > 20:
+                        # More strict criteria for keeping lines - must start with capital letter 
+                        # and have reasonable length and not contain instruction-like phrases
+                        line_strip = line.strip()
+                        if (re.match(r'^[A-Z"\']', line_strip, re.IGNORECASE) and 
+                            len(line_strip) > 25 and
+                            not any(keyword in line_strip.lower() for keyword in 
+                                   ['instruction', 'guideline', 'follow', 'essay should', 'write a', 
+                                    'please', 'task', 'assignment', 'analyze', 'requirements'])):
                             filtered_lines.append(line)
                     
                     essay = '\n'.join(filtered_lines)
+                    logger.debug(f"After line filtering, essay length: {len(essay)}")
                     
                     # Additional post-processing to remove any remaining instruction text patterns
                     if essay:
+                        orig_length = len(essay)
                         # Remove specific patterns that commonly appear at the beginning of essays
                         for pattern in [
                             r'^Write a.*essay.*\n',
@@ -519,12 +546,36 @@ START YOUR ESSAY DIRECTLY with the introduction paragraph. [/INST]"""
                             r'^\d+\. .*\n',  # Numbered instructions
                             r'^\[.*\].*\n',  # Content in brackets
                             r'^most other parts.*\n',
-                            r'^Works Cited:.*\n'
+                            r'^Works Cited:.*\n',
+                            r'^.*analyze the following.*\n',
+                            r'^.*well-structured essay.*\n',
+                            r'^.*thesis-driven.*\n',
+                            r'^.*maintain.*\n',
+                            r'^.*include.*\n',
+                            r'^.*use.*\n'
                         ]:
                             essay = re.sub(pattern, '', essay, flags=re.MULTILINE | re.IGNORECASE)
                         
+                        # Attempt to find the actual start of the essay by finding the first proper paragraph
+                        # that doesn't look like instructions
+                        paragraphs = re.split(r'\n\s*\n', essay)
+                        for i, para in enumerate(paragraphs):
+                            # Skip short paragraphs and those containing instruction phrases
+                            if (len(para.strip()) < 50 or 
+                                any(keyword in para.lower() for keyword in 
+                                   ['instruction', 'write', 'essay', 'analyze', 'following', 'word', 'mla'])):
+                                continue
+                            
+                            # We found what appears to be the real start of the essay
+                            if i > 0:
+                                logger.debug(f"Skipping {i} paragraphs that appear to be instructions")
+                                essay = '\n\n'.join(paragraphs[i:])
+                                break
+                        
                         # Remove multiple sequential blank lines that might result from filtering
                         essay = re.sub(r'\n{3,}', '\n\n', essay)
+                        
+                        logger.debug(f"Post-processing removed {orig_length - len(essay)} characters")
                 
                 # Try a different approach if the essay is still problematic
                 if not essay or len(essay.strip()) < 100:
@@ -539,7 +590,7 @@ START YOUR ESSAY DIRECTLY with the introduction paragraph. [/INST]"""
                         valid_paragraphs = []
                         for para in paragraphs:
                             # Check if paragraph looks like proper essay content
-                            if len(para.strip()) > 100 and not any(re.search(pattern, para, re.IGNORECASE) for pattern in skip_patterns):
+                            if len(para.strip()) > 100 and not any(re.search(pattern, para) for pattern in skip_patterns):
                                 valid_paragraphs.append(para.strip())
                         
                         if valid_paragraphs:
