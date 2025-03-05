@@ -51,6 +51,24 @@ On the first run, the application will:
 3. The model will be cached locally and subsequent runs will start immediately
 4. Memory usage is optimized using 4-bit quantization while maintaining high quality
 
+## Caching System
+
+The application uses a two-level caching system:
+
+1. **Model Caching**: Downloaded model files are stored in `/home/user/.cache/busy_student_companion/models/models--deepseek-ai--*` directories
+2. **Generation Caching**: Results of chunk analysis are stored in `/home/user/.cache/busy_student_companion/models/chunk_cache/*.pkl` files
+
+When developing or testing changes to the essay generation or filtering logic:
+
+```bash
+# Clear ONLY the chunk cache to test changes to generation logic
+rm -f ~/.cache/busy_student_companion/models/chunk_cache/*.pkl
+
+# DO NOT delete model files as they are large and time-consuming to re-download
+```
+
+**Note**: If changes to the essay generation or filtering logic do not appear to take effect, it is likely because the system is using cached results. Always clear the chunk cache before testing.
+
 ## Usage
 
 1. Start the web interface:
