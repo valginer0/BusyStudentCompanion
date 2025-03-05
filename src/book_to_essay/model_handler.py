@@ -322,6 +322,11 @@ Start directly with substantive analysis. [/INST]"""
 CONTENT TO USE:
 {analysis_text}
 
+**DO NOT INCLUDE ANY INSTRUCTIONS IN YOUR RESPONSE.**
+**START DIRECTLY WITH THE ESSAY - BEGIN WITH THE FIRST PARAGRAPH OF YOUR ESSAY.**
+**DO NOT INCLUDE NUMBERED POINTS, ESSAY SPECIFICATIONS, OR META COMMENTARY.**
+**DO NOT INCLUDE ANY TEXT LIKE "ESSAY:" OR "INTRODUCTION:" BEFORE STARTING.**
+
 ESSAY SPECIFICATIONS:
 - Length: Approximately {word_limit} words
 - Format: MLA style with proper citations
@@ -377,6 +382,11 @@ START YOUR ESSAY DIRECTLY with the introduction paragraph. [/INST]"""
                 logger.info(f"After [/INST] extraction, essay starts with: {essay[:100]}...")
             else:
                 logger.warning("Could not find [/INST] marker in the generated text")
+            
+            # Print the raw essay for debugging
+            print("\n" + "="*50 + " RAW MODEL OUTPUT " + "="*50)
+            print(essay)
+            print("="*120)
             
             # Completely revised filtering approach
             try:
@@ -635,6 +645,11 @@ START YOUR ESSAY DIRECTLY with the introduction paragraph. [/INST]"""
                 logger.error(f"Error during essay filtering: {str(e)}")
                 # Provide a fallback essay if filtering fails
                 essay = self._generate_fallback_essay(topic, style, word_limit)
+            
+            # Print the filtered essay for debugging
+            print("\n" + "="*50 + " FILTERED ESSAY " + "="*50)
+            print(essay)
+            print("="*120)
             
             # Add Works Cited if not already included
             if "Works Cited" not in essay and mla_citations:
