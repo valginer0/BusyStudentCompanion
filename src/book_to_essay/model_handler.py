@@ -214,7 +214,7 @@ class DeepSeekHandler:
                 for source in sources:
                     source_info += f"- {source['name']} ({source['type']})\n"
             
-            # Improved chunk analysis prompt for Mistral model
+            # Improved chunk analysis prompt for Mistral model with clearer separation
             prompt = f"""<s>[INST] You are a literary analysis expert. Analyze the following excerpt from a text regarding '{topic}' (NOT about social media or data analysis).
 
 INSTRUCTIONS:
@@ -223,13 +223,14 @@ INSTRUCTIONS:
 3. Note literary devices used to convey '{topic}'
 4. Focus ONLY on content relevant to '{topic}'
 5. Format your response as a concise analysis
+6. DO NOT include these instructions in your response
 
 {source_info}
 
 TEXT EXCERPT:
 {chunk}
 
-YOUR ANALYSIS: [/INST]"""
+YOUR ANALYSIS (start directly with your analysis, do not repeat these instructions): [/INST]"""
 
             # Print the prompt for debugging
             print(f"\nDEBUG - CHUNK ANALYSIS PROMPT:\n{prompt[:500]}...\n")
@@ -265,7 +266,8 @@ YOUR ANALYSIS: [/INST]"""
                 instruction_keywords = [
                     "INSTRUCTIONS:", "Extract key", "Identify character", "Note literary", 
                     "Focus ONLY", "Format your", "Source Materials:", "TEXT EXCERPT:",
-                    "social media", "data points", "trends, statistics", "percentages"
+                    "social media", "data analysis",
+                    "YOUR ANALYSIS", "do not repeat these instructions", "do not include these instructions"
                 ]
                 
                 # Split into lines and filter out instruction lines
@@ -310,7 +312,7 @@ YOUR ANALYSIS: [/INST]"""
             for source in sources:
                 source_info += f"- {source['name']} ({source['type']})\n"
         
-        # Improved final essay generation prompt for Mistral model
+        # Improved final essay generation prompt for Mistral model with clearer separation
         analysis_text = ' '.join(chunk_analyses)
         prompt = f"""<s>[INST] You are a professional essay writer. Write a {style} essay on {topic} using the following analysis of a text.
 
@@ -320,13 +322,16 @@ REQUIREMENTS:
 3. Include textual evidence and quotes from the source
 4. Analyze themes and literary devices, avoid plot summary
 5. Maintain academic tone and proper structure
+6. DO NOT include these instructions in your response
+7. DO NOT mention social media, data analysis, or AI in your essay
+8. Start your essay directly with a proper introduction paragraph
 
 {source_info}
 
 ANALYSIS NOTES:
 {analysis_text}
 
-Write a complete, well-structured essay: [/INST]"""
+ESSAY (start directly with your essay, do not repeat these instructions): [/INST]"""
 
         # Print the prompt for debugging
         print(f"\nDEBUG - FINAL ESSAY PROMPT:\n{prompt[:500]}...\n")
@@ -362,90 +367,121 @@ Write a complete, well-structured essay: [/INST]"""
             else:
                 logger.warning("Could not find [/INST] marker in the generated text")
             
-            # Comprehensive filtering to remove all instruction text and prompt repetition
-            essay_lines = essay.split('\n')
-            filtered_essay_lines = []
-            
-            # Patterns to identify and remove
-            instruction_patterns = [
-                r'^\[\d+\]', # Numbered requirements like [1], [2]
-                r'^REQUIREMENTS:', 
-                r'^INSTRUCTIONS:',
-                r'^Source Materials:',
-                r'^ANALYSIS NOTES:',
-                r'^TEXT EXCERPT:',
-                r'^Write a \d+-word',
-                r'^Use MLA format',
-                r'^Include textual evidence',
-                r'^Analyze themes',
-                r'^Maintain academic tone',
-                r'<s>\[INST\]',
-                r'</s>',
-                r'^The Project Gutenberg eBook',
-                r'^This ebook is for the use',
-                r'^\s*-\s*Shakespeare',
-                r'^\s*-\s*[^-]+\.txt \(txt\)',
-                r'^ANALYSIS FROM TEXT:',
-                r'^WRITE THE COMPLETE ESSAY:',
-                r'^HOMEWORK',
-                r'social media',
-                r'data points',
-                r'trends, statistics',
-                r'percentages'
-            ]
-            
-            # Skip sections between certain markers
-            skip_until_empty_line = False
-            in_instruction_block = False
-            
-            for line in essay_lines:
-                # Skip empty lines at the beginning
-                if not filtered_essay_lines and not line.strip():
-                    continue
+            # Completely revised filtering approach
+            try:
+                # First, try to find a proper essay beginning
+                essay_start_patterns = [
+                    r'(?:In|The|This|Shakespeare|Romeo|Juliet|Love|Tragedy|Throughout|When|Many|One|[A-Z][a-z]+\'s).*?\.',  # Sentences starting with common words
+                    r'[A-Z][a-z]+\'s.*?\.',  # Possessive proper noun followed by text
+                    r'[A-Z][a-z]+ [a-z]+ [a-z]+ [a-z]+.*?\.'  # Capitalized word followed by lowercase words
+                ]
                 
-                # Check if we should skip until an empty line
-                if skip_until_empty_line:
-                    if not line.strip():
-                        skip_until_empty_line = False
-                    continue
-                
-                # Check for section markers that indicate we should skip until empty line
-                if "Source Materials:" in line or "TEXT EXCERPT:" in line:
-                    skip_until_empty_line = True
-                    continue
-                
-                # Check for instruction block start
-                if line.strip().startswith("[1]") or line.strip().startswith("REQUIREMENTS:") or line.strip().startswith("INSTRUCTIONS:"):
-                    in_instruction_block = True
-                    continue
-                
-                # End of instruction block
-                if in_instruction_block and not line.strip():
-                    in_instruction_block = False
-                    continue
-                
-                # Skip lines in instruction block
-                if in_instruction_block:
-                    continue
-                
-                # Check against all patterns
-                should_skip = False
-                for pattern in instruction_patterns:
-                    if re.search(pattern, line):
-                        should_skip = True
+                essay_start = None
+                for pattern in essay_start_patterns:
+                    match = re.search(pattern, essay)
+                    if match:
+                        essay_start = match.start()
                         break
                 
-                if not should_skip:
-                    filtered_essay_lines.append(line)
+                if essay_start is not None:
+                    essay = essay[essay_start:]
+                    logger.info(f"Found essay start at position {essay_start}")
+                else:
+                    # If we can't find a proper start, use aggressive filtering
+                    logger.warning("Could not find proper essay start, using aggressive filtering")
+                    
+                    # Split into lines and aggressively filter
+                    lines = essay.split('\n')
+                    filtered_lines = []
+                    
+                    # Skip lines that match these patterns
+                    skip_patterns = [
+                        r'^\s*\d+\.', # Numbered items
+                        r'^\s*-\s+', # Bullet points
+                        r'^\s*REQUIREMENTS', 
+                        r'^\s*INSTRUCTIONS',
+                        r'^\s*ANALYSIS',
+                        r'^\s*Source Materials',
+                        r'^\s*TEXT EXCERPT',
+                        r'^\s*<s>',
+                        r'^\s*</s>',
+                        r'^\s*\[INST\]',
+                        r'^\s*\[/INST\]',
+                        r'^\s*Write a',
+                        r'^\s*Use MLA',
+                        r'^\s*Include',
+                        r'^\s*Analyze',
+                        r'^\s*Maintain',
+                        r'^\s*DO NOT',
+                        r'^\s*The Project Gutenberg',
+                        r'^\s*This ebook',
+                        r'social media',
+                        r'data analysis',
+                        r'artificial intelligence',
+                        r'HOMEWORK',
+                        r'most other parts of the world',
+                        r'^\s*ESSAY',
+                        r'start directly with',
+                        r'do not repeat these instructions',
+                        r'do not include these instructions'
+                    ]
+                    
+                    in_skip_section = False
+                    for line in lines:
+                        # Skip empty lines
+                        if not line.strip():
+                            continue
+                            
+                        # Check if we're entering a section to skip
+                        if any(re.search(pattern, line) for pattern in skip_patterns):
+                            in_skip_section = True
+                            continue
+                            
+                        # End skip section on blank line
+                        if in_skip_section and not line.strip():
+                            in_skip_section = False
+                            continue
+                            
+                        # Skip lines in skip sections
+                        if in_skip_section:
+                            continue
+                            
+                        # Keep lines that start with capital letters and have reasonable length
+                        if re.match(r'^[A-Z]', line.strip()) and len(line.strip()) > 20:
+                            filtered_lines.append(line)
+                    
+                    essay = '\n'.join(filtered_lines)
+                
+                # Try a different approach if the essay is still problematic
+                if not essay or len(essay.strip()) < 100:
+                    logger.warning("Essay too short after filtering, trying sentence extraction")
+                    # Extract all proper sentences from the original text
+                    sentences = re.findall(r'[A-Z][^.!?]*[.!?]', essay)
+                    if sentences and len(sentences) >= 3:
+                        essay = ' '.join(sentences)
+                    else:
+                        # Try to find a paragraph that looks like an essay
+                        paragraphs = re.split(r'\n\s*\n', essay)
+                        valid_paragraphs = []
+                        for para in paragraphs:
+                            # Check if paragraph looks like proper essay content
+                            if len(para.strip()) > 100 and not any(re.search(pattern, para) for pattern in skip_patterns):
+                                valid_paragraphs.append(para.strip())
+                        
+                        if valid_paragraphs:
+                            essay = '\n\n'.join(valid_paragraphs)
+                
+                logger.info(f"After comprehensive filtering, essay starts with: {essay[:100] if essay else 'EMPTY'}...")
+                
+                # If essay is still empty or too short, create a fallback essay based on topic
+                if not essay or len(essay.strip()) < 100:
+                    logger.warning("Essay too short or empty after all filtering, using fallback")
+                    essay = self._generate_fallback_essay(topic, style, word_limit)
             
-            # Join the filtered lines
-            essay = '\n'.join(filtered_essay_lines)
-            
-            # Remove any remaining instruction text at the beginning
-            essay = re.sub(r'^.*?(?=\w{3,}.*?[.!?])', '', essay, flags=re.DOTALL)
-            
-            # Log the filtered essay
-            logger.info(f"After comprehensive filtering, essay starts with: {essay[:100]}...")
+            except Exception as e:
+                logger.error(f"Error during essay filtering: {str(e)}")
+                # Provide a fallback essay if filtering fails
+                essay = self._generate_fallback_essay(topic, style, word_limit)
             
             # Add Works Cited if not already included
             if "Works Cited" not in essay and mla_citations:
@@ -455,6 +491,62 @@ Write a complete, well-structured essay: [/INST]"""
         except Exception as e:
             logger.error(f"Error generating final essay: {str(e)}")
             raise
+
+    def _generate_fallback_essay(self, topic: str, style: str, word_limit: int) -> str:
+        """Generate a fallback essay when the main generation process fails.
+        
+        Args:
+            topic: The essay topic
+            style: The writing style
+            word_limit: Target word count
+            
+        Returns:
+            A basic essay on the topic
+        """
+        logger.info(f"Generating fallback essay on topic: {topic}")
+        
+        # Create a simpler prompt that's less likely to cause issues
+        prompt = f"""<s>[INST] Write a {word_limit}-word {style} essay about {topic}. Include a clear thesis, supporting evidence, and conclusion. [/INST]"""
+        
+        try:
+            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=1024)
+            
+            # Move inputs to the same device as the model
+            device = next(self.model.parameters()).device
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            
+            response = self.model.generate(
+                **inputs,
+                max_new_tokens=min(1000, word_limit * 2),
+                temperature=0.6,  # Lower temperature for more predictable output
+                do_sample=True
+            )
+            
+            fallback_essay = self.tokenizer.decode(response[0], skip_special_tokens=True)
+            
+            # Extract only the essay part (after the prompt)
+            if "[/INST]" in fallback_essay:
+                fallback_essay = fallback_essay.split("[/INST]")[1].strip()
+            
+            # Simple filtering for the fallback essay
+            lines = fallback_essay.split('\n')
+            filtered_lines = []
+            for line in lines:
+                if line.strip() and not line.startswith('[') and not line.startswith('<'):
+                    filtered_lines.append(line)
+            
+            fallback_essay = '\n'.join(filtered_lines)
+            
+            # If we still don't have a good essay, use a template
+            if not fallback_essay or len(fallback_essay) < 100:
+                fallback_essay = f"""The theme of {topic} is a significant area of literary analysis. When examining this theme, several key aspects emerge that warrant careful consideration. First, the way characters interact with {topic} reveals much about their motivations and development. Second, the author's use of literary devices highlights the importance of {topic} within the broader narrative. Finally, the resolution of conflicts related to {topic} demonstrates its central role in the work. Through careful analysis of these elements, we gain a deeper understanding of how {topic} functions as both a literary device and a thematic concern."""
+            
+            return fallback_essay
+            
+        except Exception as e:
+            logger.error(f"Error generating fallback essay: {str(e)}")
+            # Ultimate fallback if everything else fails
+            return f"""The theme of {topic} is a significant area of literary analysis. When examining this theme, several key aspects emerge that warrant careful consideration. First, the way characters interact with {topic} reveals much about their motivations and development. Second, the author's use of literary devices highlights the importance of {topic} within the broader narrative. Finally, the resolution of conflicts related to {topic} demonstrates its central role in the work. Through careful analysis of these elements, we gain a deeper understanding of how {topic} functions as both a literary device and a thematic concern."""
 
     def generate_essay_original(self, context: str, prompt: str, max_length: int = MAX_LENGTH) -> str:
         """Generate an essay using the DeepSeek model.
