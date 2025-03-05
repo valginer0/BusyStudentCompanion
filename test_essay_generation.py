@@ -7,7 +7,7 @@ from src.book_to_essay.ai_book_to_essay_generator import AIBookEssayGenerator
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)

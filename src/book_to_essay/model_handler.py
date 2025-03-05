@@ -391,7 +391,7 @@ START YOUR ESSAY DIRECTLY with the introduction paragraph. [/INST]"""
                 
                 essay_start = None
                 for pattern in essay_start_patterns:
-                    match = re.search(pattern, essay)
+                    match = re.search(pattern, essay, re.IGNORECASE)
                     if match:
                         essay_start = match.start()
                         break
@@ -458,7 +458,26 @@ START YOUR ESSAY DIRECTLY with the introduction paragraph. [/INST]"""
                         r'following your',
                         r'as per your',
                         r'as instructed',
-                        r'following the'
+                        r'following the',
+                        
+                        # Enhanced patterns for better filtering
+                        r'.*\d+[- ]word.*',
+                        r'.*analytical essay.*',
+                        r'.*academic tone.*',
+                        r'.*proper structure.*',
+                        r'.*proper citations.*',
+                        r'.*textual evidence.*',
+                        r'.*literary devices.*',
+                        r'.*plot summary.*',
+                        r'.*clear thesis.*',
+                        r'.*complete, well-structured.*',
+                        r'.*Works Cited:.*',
+                        r'.*\[HOMEWORK\].*',
+                        r'^\s*Write an essay.*',
+                        r'^\s*Create an essay.*',
+                        r'^\s*Craft an essay.*',
+                        r'^\s*Develop an essay.*',
+                        r'^\s*Compose an essay.*'
                     ]
                     
                     in_skip_section = False
@@ -482,16 +501,36 @@ START YOUR ESSAY DIRECTLY with the introduction paragraph. [/INST]"""
                             continue
                             
                         # Keep lines that start with capital letters and have reasonable length
-                        if re.match(r'^[A-Z"\']', line.strip()) and len(line.strip()) > 20:
+                        if re.match(r'^[A-Z"\']', line.strip(), re.IGNORECASE) and len(line.strip()) > 20:
                             filtered_lines.append(line)
                     
                     essay = '\n'.join(filtered_lines)
+                    
+                    # Additional post-processing to remove any remaining instruction text patterns
+                    if essay:
+                        # Remove specific patterns that commonly appear at the beginning of essays
+                        for pattern in [
+                            r'^Write a.*essay.*\n',
+                            r'^.*\d+[- ]word.*\n',
+                            r'^.*MLA format.*\n',
+                            r'^.*textual evidence.*\n',
+                            r'^.*avoid plot summary.*\n',
+                            r'^.*academic tone.*\n',
+                            r'^\d+\. .*\n',  # Numbered instructions
+                            r'^\[.*\].*\n',  # Content in brackets
+                            r'^most other parts.*\n',
+                            r'^Works Cited:.*\n'
+                        ]:
+                            essay = re.sub(pattern, '', essay, flags=re.MULTILINE | re.IGNORECASE)
+                        
+                        # Remove multiple sequential blank lines that might result from filtering
+                        essay = re.sub(r'\n{3,}', '\n\n', essay)
                 
                 # Try a different approach if the essay is still problematic
                 if not essay or len(essay.strip()) < 100:
                     logger.warning("Essay too short after filtering, trying sentence extraction")
                     # Extract all proper sentences from the original text
-                    sentences = re.findall(r'[A-Z][^.!?]*[.!?]', essay)
+                    sentences = re.findall(r'[A-Z][^.!?]*[.!?]', essay, re.IGNORECASE)
                     if sentences and len(sentences) >= 3:
                         essay = ' '.join(sentences)
                     else:
@@ -512,7 +551,7 @@ START YOUR ESSAY DIRECTLY with the introduction paragraph. [/INST]"""
                     paragraphs = re.split(r'\n\s*\n', essay)
                     if len(paragraphs) < 3:
                         # Find paragraph boundaries using sentences
-                        sentences = re.findall(r'[A-Z][^.!?]*[.!?]', essay)
+                        sentences = re.findall(r'[A-Z][^.!?]*[.!?]', essay, re.IGNORECASE)
                         if len(sentences) >= 9:  # Minimum 9 sentences for 3 paragraphs
                             # Group into paragraphs of 3-5 sentences each
                             reconstructed_paragraphs = []
