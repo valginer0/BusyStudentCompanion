@@ -3,17 +3,18 @@ import logging
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 import torch
 import torch.quantization
-import hashlib
+import re
 import os
 import pickle
+import hashlib
+from typing import List, Dict, Optional, Tuple
 from pathlib import Path
-from src.book_to_essay.config import (
-    MODEL_NAME, MAX_LENGTH, TEMPERATURE, MAX_CHUNK_SIZE, MAX_CHUNKS_PER_ANALYSIS,
-    MODEL_CACHE_DIR, QUANT_CONFIG
+from .config import (
+    MODEL_NAME, MODEL_CACHE_DIR, MAX_LENGTH, TEMPERATURE, 
+    MAX_CHUNK_SIZE, MAX_CHUNKS_PER_ANALYSIS, QUANT_CONFIG
 )
-from src.book_to_essay.prompts.factory import PromptTemplateFactory
-from typing import List, Dict, Optional
-import re
+from .prompts.factory import PromptTemplateFactory
+from .fallback import FallbackReason
 
 logger = logging.getLogger(__name__)
 
@@ -164,390 +165,189 @@ class DeepSeekHandler:
             logger.error(f"Error caching chunk analysis: {str(e)}")
 
     def generate_essay(self, topic: str, word_limit: int = 500, style: str = "academic", sources: List[Dict] = None) -> str:
-        """Generate an essay on the given topic using the loaded text with MLA formatting.
+        """Generate an essay using chunk-based analysis.
         
         Args:
-            topic: The essay topic or prompt
-            word_limit: Maximum word count for the essay
-            style: Writing style (academic, analytical, argumentative, expository)
-            sources: List of source information dictionaries for citations
+            topic: Essay topic to write about
+            word_limit: Target word count
+            style: Writing style (academic, analytical, etc.)
+            sources: Optional list of citation sources
             
         Returns:
-            A formatted essay with MLA citations
+            A generated essay
         """
-        if not hasattr(self, 'text_chunks') or not self.text_chunks:
-            raise ValueError("No text has been loaded. Please load text first.")
-
-        # Ensure word_limit is an integer
-        word_limit = int(word_limit)
-        logger.info(f"Generating essay on topic: {topic} with word limit: {word_limit}, style: {style}")
-        
-        # Prepare MLA citations if sources are provided
-        mla_citations = []
-        if sources:
-            for source in sources:
-                # Extract author from filename (assuming format: Author - Title.ext)
-                author = source['name'].split(' - ')[0] if ' - ' in source['name'] else "Unknown Author"
-                title = source['name'].split(' - ')[1].rsplit('.', 1)[0] if ' - ' in source['name'] else source['name']
-                
-                # Format MLA citation based on source type
-                if source['type'] == 'pdf':
-                    citation = f"{author}. \"{title}.\" PDF file."
-                elif source['type'] == 'epub':
-                    citation = f"{author}. \"{title}.\" E-book."
-                else:  # txt and others
-                    citation = f"{author}. \"{title}.\""
-                
-                mla_citations.append(citation)
-        
-        # Process each chunk with source information
-        chunk_analyses = []
-        for i, chunk in enumerate(self.text_chunks):
-            logger.info(f"Processing chunk {i+1}/{len(self.text_chunks)}")
-            
-            # Check if we have a cached analysis for this chunk
-            cached_analysis = self._get_cached_chunk_analysis(chunk, topic, style, word_limit)
-            if cached_analysis:
-                chunk_analyses.append(cached_analysis)
-                logger.info(f"Using cached analysis for chunk {i+1}")
-                continue
-            
-            # Prepare source information for prompt
-            source_info = ""
-            if sources:
-                source_info = "Source Materials:\n"
-                for source in sources:
-                    source_info += f"- {source['name']} ({source['type']})\n"
-            
-            # Use the prompt template to format the chunk analysis prompt
-            prompt = self.prompt_template.format_chunk_analysis_prompt(
-                chunk=chunk,
-                topic=topic,
-                source_info=source_info
-            )
-
-            # Print the prompt for debugging
-            print(f"\nDEBUG - CHUNK ANALYSIS PROMPT:\n{prompt[:500]}...\n")
-            
-            try:
-                logger.info(f"Processing chunk {i+1} with {len(chunk)} characters")
-                inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=4096)
-                
-                # Move inputs to the same device as the model
-                device = next(self.model.parameters()).device
-                inputs = {k: v.to(device) for k, v in inputs.items()}
-                
-                response = self.model.generate(
-                    **inputs,
-                    max_new_tokens=min(500, word_limit),  
-                    temperature=0.7,
-                    do_sample=True
-                )
-                chunk_analysis = self.tokenizer.decode(response[0], skip_special_tokens=True)
-                
-                # Debug logging for chunk analysis
-                logger.info(f"Raw chunk analysis starts with: {chunk_analysis[:100]}...")
-                
-                # Extract only the model's response
-                chunk_analysis = self.prompt_template.extract_response(chunk_analysis)
-                logger.info(f"After extraction, chunk analysis starts with: {chunk_analysis[:100]}...")
-                
-                # Filter out instruction text and social media references from chunk analysis
-                instruction_keywords = [
-                    "INSTRUCTIONS:", "Extract key", "Identify character", "Note literary", 
-                    "Focus ONLY", "Format your", "Source Materials:", "TEXT EXCERPT:",
-                    "social media", "data analysis",
-                    "YOUR ANALYSIS", "do not repeat these instructions", "do not include these instructions",
-                    "start directly with", "ESSAY", "do not"
-                ]
-                
-                # Split into lines and filter out instruction lines
-                chunk_lines = chunk_analysis.split('\n')
-                filtered_chunk_lines = []
-                
-                for line in chunk_lines:
-                    should_skip = False
-                    for keyword in instruction_keywords:
-                        if keyword.lower() in line.lower():
-                            should_skip = True
-                            break
-                    
-                    # Skip numbered list items that look like instructions
-                    if re.match(r'^\d+\.\s+(Extract|Identify|Note|Focus|Format)', line.strip()):
-                        should_skip = True
-                    
-                    if not should_skip:
-                        filtered_chunk_lines.append(line)
-                
-                chunk_analysis = '\n'.join(filtered_chunk_lines)
-                logger.info(f"After filtering, chunk analysis starts with: {chunk_analysis[:100]}...")
-                
-                # Cache the chunk analysis for future use
-                self._cache_chunk_analysis(chunk, topic, style, word_limit, chunk_analysis)
-                
-                chunk_analyses.append(chunk_analysis)
-                logger.info(f"Successfully processed chunk {i+1}")
-            except Exception as e:
-                logger.error(f"Error processing chunk {i+1}: {str(e)}")
-                continue
-        
-        # Combine chunk analyses into final essay with MLA formatting
-        citations_text = ""
-        if mla_citations:
-            citations_text = "Works Cited:\n" + "\n".join(mla_citations)
-        
-        # Create source info for the final essay prompt
-        source_info = ""
-        if sources:
-            source_info = "Source Materials:\n"
-            for source in sources:
-                source_info += f"- {source['name']} ({source['type']})\n"
-        
-        # Use the prompt template to format the essay generation prompt
-        analysis_text = ' '.join(chunk_analyses)
-        prompt = self.prompt_template.format_essay_generation_prompt(
-            analysis_text=analysis_text,
-            topic=topic,
-            style=style,
-            word_limit=word_limit,
-            source_info=source_info
-        )
-
-        # Print the prompt for debugging
-        print(f"\nDEBUG - FINAL ESSAY PROMPT:\n{prompt[:500]}...\n")
+        logger.info(f"Generating essay on topic: {topic} with {word_limit} word limit in {style} style")
         
         try:
-            logger.info("Generating final essay with model...")
-            # Generate the essay
-            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=4096)
+            # Validate text chunks exist
+            if not hasattr(self, 'text_chunks') or not self.text_chunks:
+                logger.error("No text has been loaded. Please load text first.")
+                return self._generate_fallback_essay(topic, style, word_limit, reason=FallbackReason.NO_TEXT_LOADED)
             
-            # Move inputs to the same device as the model
-            device = next(self.model.parameters()).device
-            inputs = {k: v.to(device) for k, v in inputs.items()}
+            # If source not provided, try to extract from book data
+            if sources is None and hasattr(self, 'book_data'):
+                sources = [self.book_data]
             
-            response = self.model.generate(
-                **inputs,
-                max_new_tokens=min(1500, word_limit * 3),  # Allow for longer essays
-                temperature=0.7,
-                do_sample=True
-            )
+            # Prepare MLA citations
+            mla_citations = None
+            citations_text = ""
+            if sources:
+                mla_citations = []
+                for source in sources:
+                    if 'author' in source and 'title' in source:
+                        mla_citation = f"{source['author']}. {source['title']}."
+                        if 'publisher' in source:
+                            mla_citation += f" {source['publisher']},"
+                        if 'year' in source:
+                            mla_citation += f" {source['year']}."
+                        mla_citations.append(mla_citation)
+                
+                if mla_citations:
+                    citations_text = "Works Cited\n\n" + "\n".join(mla_citations)
             
-            # Get the generated text
-            essay = self.tokenizer.decode(response[0], skip_special_tokens=True)
-            logger.info(f"Raw essay generated with {len(essay)} characters")
-            
-            # Debug logging
-            logger.info(f"Raw essay starts with: {essay[:100]}...")
-            
-            # Extract only the essay part
-            essay = self.prompt_template.extract_response(essay)
-            logger.info(f"After extraction, essay starts with: {essay[:100]}...")
-            
-            # Print the raw essay for debugging
-            print("\n" + "="*50 + " RAW MODEL OUTPUT " + "="*50)
-            print(essay)
-            print("="*120)
-            
-            # Completely revised filtering approach
+            # Process the chunks
             try:
-                # First, try to find a proper essay beginning
-                essay_start_patterns = [
-                    r'(?:In|The|This|Shakespeare|Romeo|Juliet|Love|Tragedy|Throughout|When|Many|One|[A-Z][a-z]+\'s).*?\.',  # Sentences starting with common words
-                    r'[A-Z][a-z]+\'s.*?\.',  # Possessive proper noun followed by text
-                    r'[A-Z][a-z]+ [a-z]+ [a-z]+ [a-z]+.*?\.',  # Capitalized word followed by lowercase words
-                    r'(?:[A-Z][a-z]+ ){2,}.*?\.',  # Multiple capitalized words followed by text
-                    r'"[^"]+".*?\.',  # Quote followed by text
+                chunk_analyses = []
+                
+                # Log chunk processing start
+                logger.info(f"Processing {len(self.text_chunks)} text chunks for analysis")
+                
+                if not self.text_chunks or all(not chunk.strip() for chunk in self.text_chunks):
+                    logger.error("All text chunks are empty or whitespace")
+                    return self._generate_fallback_essay(topic, style, word_limit, reason=FallbackReason.EMPTY_CHUNKS)
+                
+                # Analyze each chunk
+                for i, chunk in enumerate(self.text_chunks):
+                    if not chunk.strip():
+                        logger.warning(f"Skipping empty chunk {i}")
+                        continue
+                    
+                    try:
+                        logger.info(f"Analyzing chunk {i+1}/{len(self.text_chunks)} - length: {len(chunk)}")
+                        # Print sample of chunk for debugging
+                        logger.debug(f"Chunk {i+1} starts with: {chunk[:50]}...")
+                        
+                        # Analyze the chunk using the prompt template
+                        analysis = self._analyze_chunk(chunk, topic)
+                        
+                        # Add the analysis to our list if non-empty
+                        if analysis and analysis.strip():
+                            chunk_analyses.append(analysis)
+                        else:
+                            logger.warning(f"Chunk {i+1} analysis was empty")
+                    except Exception as e:
+                        logger.error(f"Error analyzing chunk {i+1}: {str(e)}")
+                        # Continue with other chunks
+                
+                # If no analyses were produced, use fallback
+                if not chunk_analyses:
+                    logger.error("No chunk analyses were produced")
+                    return self._generate_fallback_essay(topic, style, word_limit, reason=FallbackReason.CHUNK_ANALYSIS_EMPTY)
+                
+                logger.info(f"Successfully analyzed {len(chunk_analyses)} chunks")
+                
+                # Generate the essay using the analyses
+                try:
+                    # Combine all analyses into one
+                    combined_analysis = "\n\n".join(chunk_analyses)
+                    
+                    # Check if analysis exceeds token limit
+                    approx_tokens = len(combined_analysis.split())
+                    if approx_tokens > 4000:  # Conservative estimate
+                        logger.warning(f"Analysis may exceed token limit ({approx_tokens} words)")
+                        
+                        # Truncate to avoid token limit issues
+                        combined_analysis = self._truncate_text(combined_analysis, 3500)
+                        logger.info(f"Truncated analysis to {len(combined_analysis.split())} words")
+                    
+                    # Format the prompt for essay generation
+                    prompt = self.prompt_template.format_essay_prompt(
+                        topic=topic,
+                        style=style,
+                        word_limit=word_limit,
+                        analysis=combined_analysis,
+                        citations=mla_citations
+                    )
+                    
+                    # Do the generation
+                    device = next(self.model.parameters()).device
+                    inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=4096).to(device)
+                    
+                    logger.info("Generating full essay from analysis")
+                    
+                    with torch.no_grad():
+                        outputs = self.model.generate(
+                            **inputs,
+                            max_new_tokens=min(2048, word_limit * 3),  # Limit based on word count
+                            temperature=TEMPERATURE,
+                            do_sample=True
+                        )
+                    
+                    # Decode the model output
+                    response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+                    
+                    # Try to extract just the essay part
+                    essay = self.prompt_template.extract_response(response)
+                    
+                    logger.info(f"Generated essay with length: {len(essay)}")
+                except Exception as e:
+                    logger.error(f"Error generating essay from analyses: {str(e)}")
+                    return self._generate_fallback_essay(topic, style, word_limit, reason=FallbackReason.GENERATION_ERROR)
+            
+            except Exception as e:
+                logger.error(f"Error during chunk analysis: {str(e)}")
+                return self._generate_fallback_essay(topic, style, word_limit, reason=FallbackReason.CHUNK_ANALYSIS_ERROR)
+            
+            # Post-process the essay
+            try:
+                logger.info("Filtering and cleaning essay")
+                
+                # Define patterns to skip (instructions, etc.)
+                skip_patterns = [
+                    r"(?i)essay:", r"(?i)essay on", 
+                    r"(?i)here'?s? (?:an|my|the) essay", r"(?i)I'?ll write an essay",
+                    r"(?i)this essay will", r"(?i)in this essay",
+                    r"(?i)instructions", r"(?i)prompt", r"(?i)guidelines",
+                    r"(?i)understand(?:ing)? the", r"(?i)analyze the text",
+                    r"(?i)let'?s analyze", r"(?i)let'?s begin",
+                    r"(?i)I will analyze", r"(?i)I'?ll analyze",
+                    r"(?i)start(?:ing)? (?:with|by)", r"(?i)start directly",
+                    r"(?i)do not repeat", r"(?i)don'?t repeat",
+                    r"(?i)Title:", r"(?i)MLA Format:",
+                    r"(?i)ESSAY"
                 ]
                 
-                essay_start = None
+                # Try to find where the actual essay content begins
+                essay_start_patterns = [
+                    r'(?<=\n\n)[A-Z][^.!?]{10,}[.!?]',  # Paragraph starting after 2 newlines
+                    r'^[A-Z][^.!?]{10,}[.!?]',  # Essay starting with a proper sentence at the beginning
+                    r'(?<=\n)[A-Z][^.!?]{10,}[.!?]',  # Paragraph starting after 1 newline
+                    r'[A-Z][^.!?]{20,}[.!?]'   # Any proper longer sentence
+                ]
+                
                 for pattern in essay_start_patterns:
-                    match = re.search(pattern, essay, re.IGNORECASE)
+                    match = re.search(pattern, essay)
                     if match:
-                        essay_start = match.start()
+                        start_index = match.start()
+                        essay = essay[start_index:]
+                        logger.info(f"Found essay start using pattern: {pattern}")
                         break
                 
-                if essay_start is not None:
-                    essay = essay[essay_start:]
-                    logger.info(f"Found essay start at position {essay_start}")
-                else:
-                    # If we can't find a proper start, use aggressive filtering
-                    logger.warning("Could not find proper essay start, using aggressive filtering")
-                    
-                    # Split into lines and aggressively filter
-                    lines = essay.split('\n')
-                    filtered_lines = []
-                    
-                    # Skip lines that match these patterns
-                    skip_patterns = [
-                        r'^\s*\d+\.',  # Numbered items
-                        r'^\s*-\s+',  # Bullet points
-                        r'^\s*REQUIREMENTS',
-                        r'^\s*INSTRUCTIONS',
-                        r'^\s*ANALYSIS',
-                        r'^\s*Source Materials:',
-                        r'^\s*TEXT EXCERPT:',
-                        r'^\s*<s>',
-                        r'^\s*</s>',
-                        r'^\s*\[INST\]',
-                        r'^\s*\[/INST\]',
-                        r'^\s*Write a',
-                        r'^\s*Use MLA',
-                        r'^\s*Include',
-                        r'^\s*Analyze',
-                        r'^\s*Maintain',
-                        r'^\s*DO NOT',
-                        r'^\s*The Project Gutenberg',
-                        r'^\s*This ebook',
-                        r'social media',
-                        r'data analysis',
-                        r'artificial intelligence',
-                        r'HOMEWORK',
-                        r'most other parts of the world',
-                        r'^\s*ESSAY',
-                        r'start directly with',
-                        r'do not repeat these instructions',
-                        r'do not include these instructions',
-                        r'^\s*CONTENT TO USE',
-                        r'^\s*ESSAY SPECIFICATIONS',
-                        r'^\s*ESSAY STRUCTURE',
-                        r'^\s*IMPORTANT GUIDELINES',
-                        r'^\s*START YOUR ESSAY',
-                        r'my analysis',
-                        r'as requested',
-                        r'as you requested',
-                        r'in this essay',
-                        r'in this analysis',
-                        r'First I will',
-                        r'I have analyzed',
-                        r'I have written',
-                        r'my response',
-                        r'the instructions',
-                        r'guidelines',
-                        r'Here is',
-                        r'based on your request',
-                        r'following your',
-                        r'as per your',
-                        r'as instructed',
-                        r'following the',
-                        
-                        # Enhanced patterns for better filtering
-                        r'.*\d+[- ]word.*',
-                        r'.*analytical essay.*',
-                        r'.*academic tone.*',
-                        r'.*proper structure.*',
-                        r'.*proper citations.*',
-                        r'.*textual evidence.*',
-                        r'.*literary devices.*',
-                        r'.*plot summary.*',
-                        r'.*clear thesis.*',
-                        r'.*complete, well-structured.*',
-                        r'.*Works Cited:.*',
-                        r'.*\[HOMEWORK\].*',
-                        r'^\s*Write an essay.*',
-                        r'^\s*Create an essay.*',
-                        r'^\s*Craft an essay.*',
-                        r'^\s*Develop an essay.*',
-                        r'^\s*Compose an essay.*',
-                        
-                        # Additional patterns to catch more instruction text
-                        r'^\s*Write a \d+',
-                        r'.*start directly with.*',
-                        r'.*do not repeat these instructions.*',
-                        r'.*please provide.*',
-                        r'.*ESSAY.*',
-                        r'.*MLA format.*',
-                        r'.*MLA citations.*',
-                        r'^.*instructions.*$',
-                        r'^.*prompt.*$',
-                        r'^.*TASK:.*$',
-                        r'^.*task is to.*$',
-                        r'^.*Assignment:.*$',
-                        r'^.*assigned.*$',
-                        r'^.*your job is to.*$'
-                    ]
-                    
-                    logger.debug(f"Starting essay filtering with {len(lines)} lines, using {len(skip_patterns)} skip patterns")
-                    
-                    in_skip_section = False
-                    for line in lines:
-                        # Skip empty lines
-                        if not line.strip():
-                            continue
-                            
-                        # Check if we're entering a section to skip
-                        if any(re.search(pattern, line, re.IGNORECASE) for pattern in skip_patterns):
-                            in_skip_section = True
-                            logger.debug(f"Skipping section starting with: {line[:50]}...")
-                            continue
-                            
-                        # End skip section on blank line
-                        if in_skip_section and not line.strip():
-                            in_skip_section = False
-                            continue
-                            
-                        # Skip lines in skip sections
-                        if in_skip_section:
-                            continue
-                            
-                        # More strict criteria for keeping lines - must start with capital letter 
-                        # and have reasonable length and not contain instruction-like phrases
-                        line_strip = line.strip()
-                        if (re.match(r'^[A-Z"\']', line_strip, re.IGNORECASE) and 
-                            len(line_strip) > 25 and
-                            not any(keyword in line_strip.lower() for keyword in 
-                                   ['instruction', 'guideline', 'follow', 'essay should', 'write a', 
-                                    'please', 'task', 'assignment', 'analyze', 'requirements'])):
-                            filtered_lines.append(line)
-                    
-                    essay = '\n'.join(filtered_lines)
-                    logger.debug(f"After line filtering, essay length: {len(essay)}")
-                    
-                    # Additional post-processing to remove any remaining instruction text patterns
-                    if essay:
-                        orig_length = len(essay)
-                        # Remove specific patterns that commonly appear at the beginning of essays
-                        for pattern in [
-                            r'^Write a.*essay.*\n',
-                            r'^.*\d+[- ]word.*\n',
-                            r'^.*MLA format.*\n',
-                            r'^.*textual evidence.*\n',
-                            r'^.*avoid plot summary.*\n',
-                            r'^.*academic tone.*\n',
-                            r'^\d+\. .*\n',  # Numbered instructions
-                            r'^\[.*\].*\n',  # Content in brackets
-                            r'^most other parts.*\n',
-                            r'^Works Cited:.*\n',
-                            r'^.*analyze the following.*\n',
-                            r'^.*well-structured essay.*\n',
-                            r'^.*thesis-driven.*\n',
-                            r'^.*maintain.*\n',
-                            r'^.*include.*\n',
-                            r'^.*use.*\n'
-                        ]:
-                            essay = re.sub(pattern, '', essay, flags=re.MULTILINE | re.IGNORECASE)
-                        
-                        # Attempt to find the actual start of the essay by finding the first proper paragraph
-                        # that doesn't look like instructions
-                        paragraphs = re.split(r'\n\s*\n', essay)
-                        for i, para in enumerate(paragraphs):
-                            # Skip short paragraphs and those containing instruction phrases
-                            if (len(para.strip()) < 50 or 
-                                any(keyword in para.lower() for keyword in 
-                                   ['instruction', 'write', 'essay', 'analyze', 'following', 'word', 'mla'])):
-                                continue
-                            
-                            # We found what appears to be the real start of the essay
-                            if i > 0:
-                                logger.debug(f"Skipping {i} paragraphs that appear to be instructions")
-                                essay = '\n\n'.join(paragraphs[i:])
-                                break
-                        
-                        # Remove multiple sequential blank lines that might result from filtering
-                        essay = re.sub(r'\n{3,}', '\n\n', essay)
-                        
-                        logger.debug(f"Post-processing removed {orig_length - len(essay)} characters")
+                # Skip any header lines that don't look like essay content
+                lines = essay.split('\n')
+                start_line = 0
+                for i, line in enumerate(lines):
+                    if any(re.search(pattern, line) for pattern in skip_patterns):
+                        logger.info(f"Skipping line {i}: {line}")
+                        start_line = i + 1
+                    elif len(line.strip()) > 30 and re.match(r'[A-Z]', line.strip()):
+                        # Found a substantive line that starts with uppercase
+                        break
                 
-                # Try a different approach if the essay is still problematic
+                # Reconstruct the essay from the starting line
+                if start_line > 0 and start_line < len(lines):
+                    essay = '\n'.join(lines[start_line:])
+                
                 if not essay or len(essay.strip()) < 100:
                     logger.warning("Essay too short after filtering, trying sentence extraction")
                     # Extract all proper sentences from the original text
@@ -599,12 +399,12 @@ class DeepSeekHandler:
                 # If essay is still empty or too short, create a fallback essay based on topic
                 if not essay or len(essay.strip()) < 100:
                     logger.warning("Essay too short or empty after all filtering, using fallback")
-                    essay = self._generate_fallback_essay(topic, style, word_limit)
+                    essay = self._generate_fallback_essay(topic, style, word_limit, reason=FallbackReason.ESSAY_TOO_SHORT)
             
             except Exception as e:
                 logger.error(f"Error during essay filtering: {str(e)}")
                 # Provide a fallback essay if filtering fails
-                essay = self._generate_fallback_essay(topic, style, word_limit)
+                essay = self._generate_fallback_essay(topic, style, word_limit, reason=FallbackReason.FILTERING_ERROR)
             
             # Print the filtered essay for debugging
             print("\n" + "="*50 + " FILTERED ESSAY " + "="*50)
@@ -620,18 +420,19 @@ class DeepSeekHandler:
             logger.error(f"Error generating final essay: {str(e)}")
             raise
 
-    def _generate_fallback_essay(self, topic: str, style: str, word_limit: int) -> str:
+    def _generate_fallback_essay(self, topic: str, style: str, word_limit: int, reason: FallbackReason = FallbackReason.UNKNOWN) -> str:
         """Generate a fallback essay when the main generation process fails.
         
         Args:
             topic: The essay topic
             style: The writing style
             word_limit: Target word count
+            reason: The reason for falling back to this method
             
         Returns:
             A basic essay on the topic
         """
-        logger.info(f"Generating fallback essay on topic: {topic}")
+        logger.info(f"FALLBACK_REASON: {reason} - Generating fallback essay on topic: {topic}")
         
         try:
             # Use the prompt template for fallback essay generation
@@ -647,12 +448,13 @@ class DeepSeekHandler:
             device = next(self.model.parameters()).device
             inputs = {k: v.to(device) for k, v in inputs.items()}
             
-            response = self.model.generate(
-                **inputs,
-                max_new_tokens=min(1000, word_limit * 2),
-                temperature=0.7,
-                do_sample=True
-            )
+            with torch.no_grad():
+                response = self.model.generate(
+                    **inputs,
+                    max_new_tokens=min(1000, word_limit * 2),
+                    temperature=TEMPERATURE,
+                    do_sample=True
+                )
             
             fallback_essay = self.tokenizer.decode(response[0], skip_special_tokens=True)
             
@@ -660,15 +462,30 @@ class DeepSeekHandler:
             fallback_essay = self.prompt_template.extract_response(fallback_essay)
             
             logger.info(f"Fallback essay generated with {len(fallback_essay)} characters")
+            
+            # Log essay metrics
+            word_count = len(fallback_essay.split())
+            logger.info(f"FALLBACK_METRICS: chars={len(fallback_essay)}, words={word_count}, paragraphs={fallback_essay.count('\\n\\n')+1}")
+            
             return fallback_essay
             
         except Exception as e:
             logger.error(f"Error generating fallback essay: {str(e)}")
-            # If even the fallback fails, return empty string
-            return ""
+            
+            # If even the fallback fails, try template-based generation as last resort
+            logger.warning("FALLBACK_ESCALATION: Primary fallback failed, trying template-based generation")
+            
+            # Try to determine if the topic is about a character, theme, or literary device
+            if any(keyword in topic.lower() for keyword in ["character", "protagonist", "antagonist", "person"]):
+                return self._generate_character_essay_template(topic, style, word_limit)
+            elif any(keyword in topic.lower() for keyword in ["theme", "motif", "symbol", "imagery"]):
+                return self._generate_theme_essay_template(topic, style, word_limit)
+            else:
+                return self._generate_literary_device_essay_template(topic, style, word_limit)
 
     def _generate_character_essay_template(self, topic: str, style: str, word_limit: int) -> str:
         """Generate a character-focused essay template."""
+        logger.info(f"Creating character-focused template essay for topic: {topic}")
         return f"""The character development related to {topic} represents a masterful example of literary craftsmanship. Through careful examination of the text, we can identify how the author constructs this character study to convey deeper thematic meaning and psychological insight.
 
 In the early portions of the narrative, {topic} is established through specific character actions and dialogue that reveal fundamental traits and motivations. The author's initial characterization creates a foundation upon which more complex development can build. These early scenes are crucial for understanding the character's journey and the narrative's overall trajectory.
@@ -683,6 +500,7 @@ This analysis of {topic} demonstrates how character study provides a lens throug
 
     def _generate_theme_essay_template(self, topic: str, style: str, word_limit: int) -> str:
         """Generate a theme-focused essay template."""
+        logger.info(f"Creating theme-focused template essay for topic: {topic}")
         return f"""The thematic exploration of {topic} throughout the literary work reveals the author's artistic vision and philosophical concerns. By analyzing how this theme develops and functions, we gain insight into both the work's literary craftsmanship and its broader cultural significance.
 
 The introduction of {topic} as a thematic element begins subtly in the early portions of the work. Through carefully selected imagery, dialogue, and narrative focus, the author establishes this theme in ways that prepare readers for its fuller development. These initial instances may seem minor but provide essential foundation for the theme's evolution.
@@ -697,6 +515,7 @@ This analysis of {topic} as a central theme illustrates how literary works const
 
     def _generate_literary_device_essay_template(self, topic: str, style: str, word_limit: int) -> str:
         """Generate a literary device-focused essay template."""
+        logger.info(f"Creating literary device-focused template essay for topic: {topic}")
         return f"""The author's use of {topic} as a literary device demonstrates sophisticated artistic technique and contributes significantly to the work's meaning. Through careful analysis of how this device functions within the text, we can better understand both the formal craftsmanship and thematic purpose of the literature.
 
 The implementation of {topic} appears strategically throughout the narrative, creating patterns that reward close reading and analysis. The author deploys this literary technique with varying intensity and purpose, demonstrating masterful control of the narrative craft. Early instances establish the device's presence, while later occurrences build upon this foundation with increasing complexity.
@@ -709,41 +528,110 @@ The significance of {topic} extends beyond technical achievement to influence th
 
 This analysis of {topic} as a literary device demonstrates the inseparability of form and content in literature. By examining how technical aspects of writing contribute to meaning, we develop a deeper appreciation for literature as a carefully constructed art form that communicates through both what it says and how it is said."""
 
-    def generate_essay_original(self, context: str, prompt: str, max_length: int = MAX_LENGTH) -> str:
-        """Generate an essay using the DeepSeek model.
+    def _analyze_chunk(self, chunk: str, topic: str) -> str:
+        """Analyze a text chunk for the given topic.
         
-        Warning: This method is deprecated and will be removed in a future version.
-        Use generate_essay() instead, which supports chunking for large texts.
+        Args:
+            chunk: The text chunk to analyze
+            topic: The essay topic
+            
+        Returns:
+            Analysis of the chunk relevant to the topic
         """
-        import warnings
-        warnings.warn(
-            "generate_essay_original() is deprecated and will be removed in a future version. "
-            "Use generate_essay() instead, which supports chunking for large texts.",
-            DeprecationWarning, 
-            stacklevel=2
-        )
+        logger.info(f"Analyzing chunk of {len(chunk)} characters for topic: {topic}")
         
-        instruction = f"""You are a skilled academic writer. {prompt}
-
-Please ensure that:
-1. All quotes are properly integrated into the text
-2. Each quote has an MLA in-text citation (Author Page)
-3. The essay follows proper MLA formatting
-4. The Works Cited section at the end follows MLA format exactly
-
-Context:
-{context}"""
-        
-        inputs = self.tokenizer(instruction, return_tensors="pt").to(self.model.device)
-        
-        with torch.no_grad():
-            outputs = self.model.generate(
-                **inputs,
-                max_length=max_length,
-                temperature=TEMPERATURE,
-                do_sample=True,
-                pad_token_id=self.tokenizer.eos_token_id
+        try:
+            # Check if we have a cached analysis for this chunk
+            cached_analysis = self._get_cached_chunk_analysis(chunk, topic)
+            if cached_analysis:
+                logger.info("Using cached chunk analysis")
+                return cached_analysis
+            
+            # Format the prompt using the template
+            prompt = self.prompt_template.format_chunk_analysis_prompt(
+                chunk=chunk,
+                topic=topic
             )
             
-        response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-        return response.strip()
+            # Tokenize and prepare inputs
+            device = next(self.model.parameters()).device
+            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=4096).to(device)
+            
+            # Generate the analysis
+            with torch.no_grad():
+                response = self.model.generate(
+                    **inputs,
+                    max_new_tokens=500,
+                    temperature=TEMPERATURE,
+                    do_sample=True
+                )
+            
+            # Decode and extract the response
+            analysis = self.tokenizer.decode(response[0], skip_special_tokens=True)
+            analysis = self.prompt_template.extract_response(analysis)
+            
+            # Filter out instruction text
+            instruction_keywords = [
+                "INSTRUCTIONS:", "Extract key", "Identify character", "Note literary", 
+                "Focus ONLY", "Format your", "Source Materials:", "TEXT EXCERPT:",
+                "social media", "data analysis",
+                "YOUR ANALYSIS", "do not repeat these instructions", "do not include these instructions",
+                "start directly with", "ESSAY", "do not"
+            ]
+            
+            # Split into lines and filter out instruction lines
+            analysis_lines = analysis.split('\n')
+            filtered_lines = []
+            
+            for line in analysis_lines:
+                should_skip = False
+                for keyword in instruction_keywords:
+                    if keyword.lower() in line.lower():
+                        should_skip = True
+                        break
+                
+                # Skip numbered list items that look like instructions
+                if re.match(r'^\d+\.\s+(Extract|Identify|Note|Focus|Format)', line.strip()):
+                    should_skip = True
+                
+                if not should_skip:
+                    filtered_lines.append(line)
+            
+            analysis = '\n'.join(filtered_lines)
+            
+            # Cache the analysis
+            self._cache_chunk_analysis(chunk, topic, analysis)
+            
+            return analysis
+            
+        except Exception as e:
+            logger.error(f"Error analyzing chunk: {str(e)}")
+            return ""
+
+    def _truncate_text(self, text: str, target_words: int) -> str:
+        """Truncate text to a target word count while preserving paragraph structure.
+        
+        Args:
+            text: The text to truncate
+            target_words: Target number of words
+            
+        Returns:
+            Truncated text
+        """
+        words = text.split()
+        
+        if len(words) <= target_words:
+            return text
+        
+        # If we need significant truncation, preserve first 60% and last 40%
+        if len(words) > target_words * 1.5:
+            first_chunk_size = int(target_words * 0.6)
+            last_chunk_size = target_words - first_chunk_size
+            
+            first_chunk = ' '.join(words[:first_chunk_size])
+            last_chunk = ' '.join(words[-last_chunk_size:])
+            
+            return f"{first_chunk}\n\n[...]\n\n{last_chunk}"
+        
+        # For minor truncation, just take the first N words
+        return ' '.join(words[:target_words])

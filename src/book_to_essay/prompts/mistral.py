@@ -80,7 +80,19 @@ Write a complete essay with introduction, body paragraphs, and conclusion. Start
         Returns:
             A formatted prompt string
         """
-        prompt = f"""<s>[INST] Write a {word_limit}-word {style} essay analyzing '{topic}' in literature. Use MLA format and include textual evidence. Begin directly with your essay text. [/INST]"""
+        prompt = f"""<s>[INST] Write a {word_limit}-word {style} essay analyzing '{topic}' in literature.
+
+IMPORTANT GUIDELINES:
+- Your response must be a complete, well-structured essay with introduction, body paragraphs, and conclusion
+- Include a clear thesis statement in your introduction
+- Provide specific examples and textual evidence to support your analysis
+- Follow MLA format with in-text citations when quoting
+- DO NOT write a list of questions
+- DO NOT include section headers, numbered points, or meta commentary
+- DO NOT discuss social media, data analysis, AI, or homework
+- AVOID plot summary - focus on analysis
+
+Begin directly with your essay introduction paragraph - DO NOT include any instructions or explanatory text in your response. [/INST]"""
         
         return prompt
     
