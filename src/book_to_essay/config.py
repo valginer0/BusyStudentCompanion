@@ -36,8 +36,11 @@ logger.info(f"Environment detected: GPU={HAS_GPU}, BitsAndBytes={HAS_BITSANDBYTE
 
 # Model Settings
 MODEL_NAME = "deepseek-ai/deepseek-llm-7b-base"  # Using the larger DeepSeek model for better quality
-# MODEL_NAME = "deepseek-ai/deepseek-coder-1.3b-base"  # Previous model (commented out)
-# MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.1"  # Mistral model (commented out)
+# Alternative models (commented out)
+# MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.1"  # Mistral model
+# MODEL_NAME = "deepseek-ai/deepseek-coder-1.3b-base"  # Smaller DeepSeek model
+
+# Default model generation parameters
 MAX_LENGTH = 2048
 TEMPERATURE = 0.7
 

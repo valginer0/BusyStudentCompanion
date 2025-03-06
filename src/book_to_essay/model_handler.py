@@ -11,7 +11,8 @@ from src.book_to_essay.config import (
     MODEL_NAME, MAX_LENGTH, TEMPERATURE, MAX_CHUNK_SIZE, MAX_CHUNKS_PER_ANALYSIS,
     MODEL_CACHE_DIR, QUANT_CONFIG
 )
-from typing import List, Dict
+from src.book_to_essay.prompts.factory import PromptTemplateFactory
+from typing import List, Dict, Optional
 import re
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,10 @@ class DeepSeekHandler:
             # Initialize chunk cache
             self.chunk_cache_dir = Path(os.path.join(MODEL_CACHE_DIR, "chunk_cache"))
             self.chunk_cache_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Initialize prompt template based on model
+            self.prompt_template = PromptTemplateFactory.create(MODEL_NAME)
+            logger.info(f"Using prompt template for model type: {self.prompt_template.__class__.__name__}")
             
             logger.info("Model loaded successfully")
             
@@ -207,33 +212,19 @@ class DeepSeekHandler:
                 logger.info(f"Using cached analysis for chunk {i+1}")
                 continue
             
-            # Include source information and MLA requirements in the chunk prompt
+            # Prepare source information for prompt
             source_info = ""
             if sources:
                 source_info = "Source Materials:\n"
                 for source in sources:
                     source_info += f"- {source['name']} ({source['type']})\n"
             
-            # Improved chunk analysis prompt for Mistral model with clearer separation
-            prompt = f"""<s>[INST] You are a literary scholar analyzing literature. Your task is to extract and analyze material from this text excerpt that relates to '{topic}'. 
-
-TEXT TO ANALYZE:
-{chunk}
-
-YOUR TASK:
-- Identify key quotes that illustrate '{topic}'
-- Note significant themes, motifs, and literary devices related to '{topic}'
-- Analyze character development and dialogue that relates to '{topic}'
-- Extract evidence for literary analysis about '{topic}'
-
-IMPORTANT: Your response must ONLY contain analysis content. DO NOT:
-- Repeat these instructions
-- Include phrases like "here is my analysis" or "as requested"
-- Include section headers like "Analysis:" or "Key Quotes:"
-- Refer to yourself, the reader, or the task itself
-- Mention social media, data analysis, AI, or homework
-
-Start directly with substantive analysis. [/INST]"""
+            # Use the prompt template to format the chunk analysis prompt
+            prompt = self.prompt_template.format_chunk_analysis_prompt(
+                chunk=chunk,
+                topic=topic,
+                source_info=source_info
+            )
 
             # Print the prompt for debugging
             print(f"\nDEBUG - CHUNK ANALYSIS PROMPT:\n{prompt[:500]}...\n")
@@ -256,21 +247,18 @@ Start directly with substantive analysis. [/INST]"""
                 
                 # Debug logging for chunk analysis
                 logger.info(f"Raw chunk analysis starts with: {chunk_analysis[:100]}...")
-                logger.info(f"Contains [/INST]? {'[/INST]' in chunk_analysis}")
                 
                 # Extract only the model's response
-                if "[/INST]" in chunk_analysis:
-                    chunk_analysis = chunk_analysis.split("[/INST]")[1].strip()
-                    logger.info(f"After [/INST] extraction, chunk analysis starts with: {chunk_analysis[:100]}...")
-                else:
-                    logger.warning("Could not find [/INST] marker in the chunk analysis")
+                chunk_analysis = self.prompt_template.extract_response(chunk_analysis)
+                logger.info(f"After extraction, chunk analysis starts with: {chunk_analysis[:100]}...")
                 
                 # Filter out instruction text and social media references from chunk analysis
                 instruction_keywords = [
                     "INSTRUCTIONS:", "Extract key", "Identify character", "Note literary", 
                     "Focus ONLY", "Format your", "Source Materials:", "TEXT EXCERPT:",
                     "social media", "data analysis",
-                    "YOUR ANALYSIS", "do not repeat these instructions", "do not include these instructions"
+                    "YOUR ANALYSIS", "do not repeat these instructions", "do not include these instructions",
+                    "start directly with", "ESSAY", "do not"
                 ]
                 
                 # Split into lines and filter out instruction lines
@@ -315,39 +303,15 @@ Start directly with substantive analysis. [/INST]"""
             for source in sources:
                 source_info += f"- {source['name']} ({source['type']})\n"
         
-        # Improved final essay generation prompt for Mistral model with clearer separation
+        # Use the prompt template to format the essay generation prompt
         analysis_text = ' '.join(chunk_analyses)
-        prompt = f"""<s>[INST] You are writing an essay as a literary scholar. Write a well-structured, {style} essay analyzing '{topic}' based on the provided literary analysis.
-
-CONTENT TO USE:
-{analysis_text}
-
-**DO NOT INCLUDE ANY INSTRUCTIONS IN YOUR RESPONSE.**
-**START DIRECTLY WITH THE ESSAY - BEGIN WITH THE FIRST PARAGRAPH OF YOUR ESSAY.**
-**DO NOT INCLUDE NUMBERED POINTS, ESSAY SPECIFICATIONS, OR META COMMENTARY.**
-**DO NOT INCLUDE ANY TEXT LIKE "ESSAY:" OR "INTRODUCTION:" BEFORE STARTING.**
-
-ESSAY SPECIFICATIONS:
-- Length: Approximately {word_limit} words
-- Format: MLA style with proper citations
-- Style: {style.capitalize()}
-- Focus: Analysis of '{topic}' with textual evidence
-- Structure: Introduction with thesis, body paragraphs with evidence, and conclusion
-
-ESSAY STRUCTURE:
-- Introduction: Begin with context about the work and present a clear thesis statement about '{topic}'
-- Body: Develop 2-3 main points with textual evidence and analysis
-- Conclusion: Synthesize your analysis and explain the significance of '{topic}'
-
-IMPORTANT GUIDELINES:
-- AVOID plot summary - focus on analysis
-- INCLUDE specific textual evidence and quotes
-- USE MLA in-text citations when quoting (Author Page)
-- DO NOT discuss social media, data analysis, AI, or homework
-- DO NOT include any meta-text about writing an essay
-- DO NOT repeat these instructions or include explanatory text
-
-START YOUR ESSAY DIRECTLY with the introduction paragraph. [/INST]"""
+        prompt = self.prompt_template.format_essay_generation_prompt(
+            analysis_text=analysis_text,
+            topic=topic,
+            style=style,
+            word_limit=word_limit,
+            source_info=source_info
+        )
 
         # Print the prompt for debugging
         print(f"\nDEBUG - FINAL ESSAY PROMPT:\n{prompt[:500]}...\n")
@@ -374,14 +338,10 @@ START YOUR ESSAY DIRECTLY with the introduction paragraph. [/INST]"""
             
             # Debug logging
             logger.info(f"Raw essay starts with: {essay[:100]}...")
-            logger.info(f"Contains [/INST]? {'[/INST]' in essay}")
             
-            # Extract only the essay part (after the prompt)
-            if "[/INST]" in essay:
-                essay = essay.split("[/INST]")[1].strip()
-                logger.info(f"After [/INST] extraction, essay starts with: {essay[:100]}...")
-            else:
-                logger.warning("Could not find [/INST] marker in the generated text")
+            # Extract only the essay part
+            essay = self.prompt_template.extract_response(essay)
+            logger.info(f"After extraction, essay starts with: {essay[:100]}...")
             
             # Print the raw essay for debugging
             print("\n" + "="*50 + " RAW MODEL OUTPUT " + "="*50)
@@ -673,13 +633,13 @@ START YOUR ESSAY DIRECTLY with the introduction paragraph. [/INST]"""
         """
         logger.info(f"Generating fallback essay on topic: {topic}")
         
-        # Multi-stage fallback approach
-        # Try several prompts with increasing specificity
-        
-        # Stage 1: Simple, direct prompt with role
         try:
-            logger.info("Trying fallback stage 1: Simple prompt with role")
-            prompt = f"""<s>[INST] As an English literature professor, write a {word_limit}-word {style} essay analyzing {topic}. Follow MLA format with in-text citations. Begin directly with your essay. [/INST]"""
+            # Use the prompt template for fallback essay generation
+            prompt = self.prompt_template.format_fallback_prompt(
+                topic=topic,
+                style=style,
+                word_limit=word_limit
+            )
             
             inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=1024)
             
@@ -690,105 +650,22 @@ START YOUR ESSAY DIRECTLY with the introduction paragraph. [/INST]"""
             response = self.model.generate(
                 **inputs,
                 max_new_tokens=min(1000, word_limit * 2),
-                temperature=0.6,  # Lower temperature for more predictable output
+                temperature=0.7,
                 do_sample=True
             )
             
             fallback_essay = self.tokenizer.decode(response[0], skip_special_tokens=True)
             
-            # Extract only the essay part (after the prompt)
-            if "[/INST]" in fallback_essay:
-                fallback_essay = fallback_essay.split("[/INST]")[1].strip()
+            # Extract only the essay part
+            fallback_essay = self.prompt_template.extract_response(fallback_essay)
             
-            # Basic filtering
-            lines = fallback_essay.split('\n')
-            filtered_lines = []
-            for line in lines:
-                if line.strip() and not line.startswith('[') and not line.startswith('<') and not line.startswith('As an'):
-                    filtered_lines.append(line)
+            logger.info(f"Fallback essay generated with {len(fallback_essay)} characters")
+            return fallback_essay
             
-            fallback_essay = '\n'.join(filtered_lines)
-            
-            # Check if it's a proper essay (at least 100 chars and starts with a capital letter)
-            if fallback_essay and len(fallback_essay.strip()) >= 100 and re.match(r'^[A-Z"]', fallback_essay.strip()):
-                return fallback_essay
-                
         except Exception as e:
-            logger.error(f"Error in fallback stage 1: {str(e)}")
-        
-        # Stage 2: More structured prompt with essay structure guidance
-        try:
-            logger.info("Trying fallback stage 2: Structured prompt with essay guidance")
-            prompt = f"""<s>[INST] Write a clear, focused {style} essay on {topic}. 
-
-Your essay must include:
-1. Introduction with thesis statement
-2. Body paragraphs with evidence
-3. Conclusion
-
-Begin your essay immediately. [/INST]"""
-            
-            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=1024)
-            device = next(self.model.parameters()).device
-            inputs = {k: v.to(device) for k, v in inputs.items()}
-            
-            response = self.model.generate(
-                **inputs,
-                max_new_tokens=min(1000, word_limit * 2),
-                temperature=0.5,  # Even lower temperature
-                do_sample=True
-            )
-            
-            fallback_essay = self.tokenizer.decode(response[0], skip_special_tokens=True)
-            
-            # Extract after instruction
-            if "[/INST]" in fallback_essay:
-                fallback_essay = fallback_essay.split("[/INST]")[1].strip()
-            
-            # More aggressive filtering
-            lines = fallback_essay.split('\n')
-            filtered_lines = []
-            skip_patterns = [r'Your essay', r'Introduction', r'Body', r'Conclusion', r'must include', r'Begin your']
-            
-            for line in lines:
-                if line.strip() and not any(re.search(pattern, line) for pattern in skip_patterns):
-                    filtered_lines.append(line)
-            
-            fallback_essay = '\n'.join(filtered_lines)
-            
-            # Check if it's a proper essay
-            if fallback_essay and len(fallback_essay.strip()) >= 100:
-                return fallback_essay
-                
-        except Exception as e:
-            logger.error(f"Error in fallback stage 2: {str(e)}")
-        
-        # Stage 3: Template-based essay with topic-specific content
-        logger.info("Using template-based fallback essay for topic: " + topic)
-        
-        # Check topic category to determine template style
-        character_related = any(word in topic.lower() for word in ["character", "protagonist", "antagonist", "hero", "villain"])
-        theme_related = any(word in topic.lower() for word in ["theme", "motif", "symbolism", "imagery", "metaphor", "allegory"])
-        literary_device = any(word in topic.lower() for word in ["irony", "foreshadowing", "allusion", "personification", "tone", "mood"])
-        
-        # Select appropriate template based on topic type
-        if character_related:
-            return self._generate_character_essay_template(topic, style, word_limit)
-        elif theme_related:
-            return self._generate_theme_essay_template(topic, style, word_limit)
-        elif literary_device:
-            return self._generate_literary_device_essay_template(topic, style, word_limit)
-        else:
-            # General template
-            return f"""The analysis of {topic} reveals significant insights into the literary work. In examining this subject, several patterns emerge that warrant careful consideration and analysis. The author's treatment of {topic} serves multiple purposes within the narrative structure.
-
-First, {topic} functions as a central element that shapes character development throughout the work. The ways in which characters interact with and respond to {topic} reveals their motivations, values, and internal conflicts. This character-based analysis provides readers with a deeper understanding of the psychological dimensions at play.
-
-Second, {topic} operates as a thematic device that connects to broader ideas within the text. By examining how {topic} relates to the work's major themes, we can see the author's commentary on larger social, philosophical, or ethical questions. The textual evidence supports an interpretation that {topic} serves as both a literal element and a symbolic representation of these deeper concerns.
-
-Finally, the stylistic and structural choices surrounding {topic} demonstrate sophisticated literary craftsmanship. The author's use of language, imagery, and narrative structure in relation to {topic} enhances its significance and impact on the reader's experience. This technical analysis reveals the deliberate artistic choices that elevate the work beyond mere storytelling.
-
-Through careful examination of textual evidence, it becomes clear that {topic} functions as an essential component of the work's literary merit and meaning. This analysis demonstrates how a focused study of specific elements can illuminate our understanding of literature as both art and cultural expression."""
+            logger.error(f"Error generating fallback essay: {str(e)}")
+            # If even the fallback fails, return empty string
+            return ""
 
     def _generate_character_essay_template(self, topic: str, style: str, word_limit: int) -> str:
         """Generate a character-focused essay template."""

@@ -1,0 +1,127 @@
+"""Prompt templates for DeepSeek models."""
+from typing import List, Dict, Optional
+from src.book_to_essay.prompts.base import PromptTemplate
+
+
+class DeepSeekPromptTemplate(PromptTemplate):
+    """Prompt templates for DeepSeek language models."""
+    
+    def format_chunk_analysis_prompt(self, 
+                                    chunk: str, 
+                                    topic: str, 
+                                    source_info: Optional[str] = None) -> str:
+        """Format a prompt for analyzing a chunk of text for DeepSeek model.
+        
+        Args:
+            chunk: The text chunk to analyze
+            topic: The topic to focus on
+            source_info: Optional information about the source
+            
+        Returns:
+            A formatted prompt string
+        """
+        prompt = f"""<s>[INST] You are a literary scholar analyzing literature. Your task is to extract and analyze material from this text excerpt that relates to '{topic}'. 
+
+TEXT TO ANALYZE:
+{chunk}
+
+YOUR TASK:
+- Identify key quotes that illustrate '{topic}'
+- Note significant themes, motifs, and literary devices related to '{topic}'
+- Analyze character development and dialogue that relates to '{topic}'
+- Extract evidence for literary analysis about '{topic}'
+
+IMPORTANT: Your response must ONLY contain analysis content. DO NOT:
+- Repeat these instructions
+- Include phrases like "here is my analysis" or "as requested"
+- Include section headers like "Analysis:" or "Key Quotes:"
+- Refer to yourself, the reader, or the task itself
+- Mention social media, data analysis, AI, or homework
+
+Start directly with substantive analysis. [/INST]"""
+
+        return prompt
+    
+    def format_essay_generation_prompt(self, 
+                                      analysis_text: str, 
+                                      topic: str, 
+                                      style: str,
+                                      word_limit: int,
+                                      source_info: Optional[str] = None) -> str:
+        """Format a prompt for generating an essay with DeepSeek model.
+        
+        Args:
+            analysis_text: The text analysis to use for essay generation
+            topic: The essay topic
+            style: The writing style
+            word_limit: The target word count
+            source_info: Optional information about the source
+            
+        Returns:
+            A formatted prompt string
+        """
+        prompt = f"""<s>[INST] You are writing an essay as a literary scholar. Write a well-structured, {style} essay analyzing '{topic}' based on the provided literary analysis.
+
+CONTENT TO USE:
+{analysis_text}
+
+**DO NOT INCLUDE ANY INSTRUCTIONS IN YOUR RESPONSE.**
+**START DIRECTLY WITH THE ESSAY - BEGIN WITH THE FIRST PARAGRAPH OF YOUR ESSAY.**
+**DO NOT INCLUDE NUMBERED POINTS, ESSAY SPECIFICATIONS, OR META COMMENTARY.**
+**DO NOT INCLUDE ANY TEXT LIKE "ESSAY:" OR "INTRODUCTION:" BEFORE STARTING.**
+
+ESSAY SPECIFICATIONS:
+- Length: Approximately {word_limit} words
+- Format: MLA style with proper citations
+- Style: {style.capitalize()}
+- Focus: Analysis of '{topic}' with textual evidence
+- Structure: Introduction with thesis, body paragraphs with evidence, and conclusion
+
+ESSAY STRUCTURE:
+- Introduction: Begin with context about the work and present a clear thesis statement about '{topic}'
+- Body: Develop 2-3 main points with textual evidence and analysis
+- Conclusion: Synthesize your analysis and explain the significance of '{topic}'
+
+IMPORTANT GUIDELINES:
+- AVOID plot summary - focus on analysis
+- INCLUDE specific textual evidence and quotes
+- USE MLA in-text citations when quoting (Author Page)
+- DO NOT discuss social media, data analysis, AI, or homework
+- DO NOT include any meta-text about writing an essay
+- DO NOT repeat these instructions or include explanatory text
+
+START YOUR ESSAY DIRECTLY with the introduction paragraph. [/INST]"""
+
+        return prompt
+    
+    def format_fallback_prompt(self,
+                              topic: str,
+                              style: str,
+                              word_limit: int) -> str:
+        """Format a fallback prompt for simpler essay generation with DeepSeek model.
+        
+        Args:
+            topic: The essay topic
+            style: The writing style
+            word_limit: The target word count
+            
+        Returns:
+            A formatted prompt string
+        """
+        prompt = f"""<s>[INST] As an English literature professor, write a {word_limit}-word {style} essay analyzing {topic}. Follow MLA format with in-text citations. Begin directly with your essay. [/INST]"""
+        
+        return prompt
+    
+    def extract_response(self, generated_text: str) -> str:
+        """Extract the model's response from the generated text.
+        
+        Args:
+            generated_text: The raw text generated by the model
+            
+        Returns:
+            The extracted response
+        """
+        # Extract only the essay part (after the prompt)
+        if "[/INST]" in generated_text:
+            return generated_text.split("[/INST]")[1].strip()
+        return generated_text
