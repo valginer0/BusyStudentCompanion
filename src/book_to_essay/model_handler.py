@@ -21,9 +21,30 @@ logger = logging.getLogger(__name__)
 class DeepSeekHandler:
     """Handler for the language model."""
     
-    def __init__(self):
-        """Initialize the model and tokenizer with appropriate quantization."""
+    def __init__(self, model=None, tokenizer=None, prompt_template=None):
+        """Initialize the model and tokenizer with appropriate quantization.
+        
+        Args:
+            model: Optional pre-loaded model to reuse
+            tokenizer: Optional pre-loaded tokenizer to reuse
+            prompt_template: Optional pre-loaded prompt template to reuse
+        """
         try:
+            # Initialize chunk cache directory regardless of model reuse
+            self.chunk_cache_dir = Path(os.path.join(MODEL_CACHE_DIR, "chunk_cache"))
+            self.chunk_cache_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Initialize text_chunks
+            self.text_chunks = []
+            
+            # If model and tokenizer are provided, reuse them
+            if model is not None and tokenizer is not None:
+                logger.info("Reusing existing model and tokenizer")
+                self.model = model
+                self.tokenizer = tokenizer
+                self.prompt_template = prompt_template or PromptTemplateFactory.create(MODEL_NAME)
+                return
+                
             logger.info(f"Loading model and tokenizer: {MODEL_NAME}")
             
             # Load tokenizer
@@ -55,15 +76,11 @@ class DeepSeekHandler:
                             dtype=torch.qint8
                         )
             
-            # Initialize text_chunks
-            self.text_chunks = []
-            
-            # Initialize chunk cache
-            self.chunk_cache_dir = Path(os.path.join(MODEL_CACHE_DIR, "chunk_cache"))
-            self.chunk_cache_dir.mkdir(parents=True, exist_ok=True)
-            
             # Initialize prompt template based on model
-            self.prompt_template = PromptTemplateFactory.create(MODEL_NAME)
+            if prompt_template is None:
+                self.prompt_template = PromptTemplateFactory.create(MODEL_NAME)
+            else:
+                self.prompt_template = prompt_template
             logger.info(f"Using prompt template for model type: {self.prompt_template.__class__.__name__}")
             
             logger.info("Model loaded successfully")
@@ -182,7 +199,7 @@ class DeepSeekHandler:
             # Validate text chunks exist
             if not hasattr(self, 'text_chunks') or not self.text_chunks:
                 logger.error("No text has been loaded. Please load text first.")
-                return self._generate_fallback_essay(topic, style, word_limit, reason=FallbackReason.NO_TEXT_LOADED)
+                return self._generate_fallback_essay(topic, style, word_limit, reason=FallbackReason.EMPTY_CHUNKS)
             
             # If source not provided, try to extract from book data
             if sources is None and hasattr(self, 'book_data'):
@@ -228,7 +245,7 @@ class DeepSeekHandler:
                         logger.debug(f"Chunk {i+1} starts with: {chunk[:50]}...")
                         
                         # Analyze the chunk using the prompt template
-                        analysis = self._analyze_chunk(chunk, topic)
+                        analysis = self._analyze_chunk(chunk, topic, style, word_limit)
                         
                         # Add the analysis to our list if non-empty
                         if analysis and analysis.strip():
@@ -465,7 +482,8 @@ class DeepSeekHandler:
             
             # Log essay metrics
             word_count = len(fallback_essay.split())
-            logger.info(f"FALLBACK_METRICS: chars={len(fallback_essay)}, words={word_count}, paragraphs={fallback_essay.count('\\n\\n')+1}")
+            paragraph_count = fallback_essay.count('\\n\\n') + 1
+            logger.info(f"FALLBACK_METRICS: chars={len(fallback_essay)}, words={word_count}, paragraphs={paragraph_count}")
             
             return fallback_essay
             
@@ -528,21 +546,13 @@ The significance of {topic} extends beyond technical achievement to influence th
 
 This analysis of {topic} as a literary device demonstrates the inseparability of form and content in literature. By examining how technical aspects of writing contribute to meaning, we develop a deeper appreciation for literature as a carefully constructed art form that communicates through both what it says and how it is said."""
 
-    def _analyze_chunk(self, chunk: str, topic: str) -> str:
-        """Analyze a text chunk for the given topic.
-        
-        Args:
-            chunk: The text chunk to analyze
-            topic: The essay topic
-            
-        Returns:
-            Analysis of the chunk relevant to the topic
-        """
+    def _analyze_chunk(self, chunk: str, topic: str, style: str, word_limit: int) -> str:
+        """Analyze a text chunk for relevance to the topic."""
         logger.info(f"Analyzing chunk of {len(chunk)} characters for topic: {topic}")
         
         try:
             # Check if we have a cached analysis for this chunk
-            cached_analysis = self._get_cached_chunk_analysis(chunk, topic)
+            cached_analysis = self._get_cached_chunk_analysis(chunk, topic, style, word_limit)
             if cached_analysis:
                 logger.info("Using cached chunk analysis")
                 return cached_analysis
@@ -600,7 +610,7 @@ This analysis of {topic} as a literary device demonstrates the inseparability of
             analysis = '\n'.join(filtered_lines)
             
             # Cache the analysis
-            self._cache_chunk_analysis(chunk, topic, analysis)
+            self._cache_chunk_analysis(chunk, topic, style, word_limit, analysis)
             
             return analysis
             
