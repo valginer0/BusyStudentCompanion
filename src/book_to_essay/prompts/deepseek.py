@@ -124,6 +124,39 @@ Begin directly with your essay introduction paragraph - DO NOT include any instr
         
         return prompt
     
+    def format_essay_prompt(self,
+                           topic: str,
+                           style: str,
+                           word_limit: int,
+                           analysis: str,
+                           citations: Optional[List[str]] = None) -> str:
+        """Format a prompt for generating an essay (alias for format_essay_generation_prompt).
+        
+        This method serves as an adapter for the method called in model_handler.py.
+        
+        Args:
+            topic: The essay topic
+            style: The writing style
+            word_limit: The target word count
+            analysis: The analysis text to use for essay generation
+            citations: Optional list of citation sources
+            
+        Returns:
+            A formatted prompt string
+        """
+        # Adapt parameters to match format_essay_generation_prompt
+        source_info = None
+        if citations:
+            source_info = ", ".join(citations)
+            
+        return self.format_essay_generation_prompt(
+            analysis_text=analysis,
+            topic=topic,
+            style=style,
+            word_limit=word_limit,
+            source_info=source_info
+        )
+    
     def extract_response(self, generated_text: str) -> str:
         """Extract the model's response from the generated text.
         
@@ -134,6 +167,68 @@ Begin directly with your essay introduction paragraph - DO NOT include any instr
             The extracted response
         """
         # Extract only the essay part (after the prompt)
+        extracted_text = ""
+        
         if "[/INST]" in generated_text:
-            return generated_text.split("[/INST]")[1].strip()
-        return generated_text
+            extracted_text = generated_text.split("[/INST]")[1].strip()
+        else:
+            extracted_text = generated_text.strip()
+            
+        # Check if the extracted text has valid content
+        if not extracted_text or len(extracted_text) < 30:
+            # If response is empty or too short, check if there's anything useful in the complete text
+            # This handles cases where the model didn't use the expected format
+            useful_content = self._extract_essay_content(generated_text)
+            if useful_content and len(useful_content) > len(extracted_text):
+                return useful_content
+        
+        return extracted_text
+    
+    def _extract_essay_content(self, text: str) -> str:
+        """Attempt to extract valid essay content from text using more aggressive methods.
+        
+        Args:
+            text: The text to extract essay content from
+            
+        Returns:
+            Extracted essay content or empty string if none found
+        """
+        import re
+        
+        # Try removing any instruction text and extract paragraphs
+        # Common patterns indicating the actual essay content
+        essay_start_patterns = [
+            r'(?:^|\n)([A-Z][^.!?]{3,}[.!?])', # Sentence starting with capital letter
+            r'(?:^|\n)In [a-zA-Z\s]+, ',  # Common essay opening "In [work/literature/novel], "
+            r'(?:^|\n)The (?:theme|concept|idea|character|topic)',  # Common essay opening with "The [topic]"
+            r'(?:^|\n)(?:Throughout|Within|Across) ',  # Common essay transition
+        ]
+        
+        for pattern in essay_start_patterns:
+            matches = re.search(pattern, text)
+            if matches:
+                # Extract from the first match to the end
+                start_index = matches.start()
+                return text[start_index:].strip()
+        
+        # If no specific start found, try to extract coherent paragraphs
+        paragraphs = re.split(r'\n\s*\n', text)
+        valid_paragraphs = []
+        
+        for para in paragraphs:
+            # Check if paragraph looks like essay content (not instructions)
+            if (len(para.strip()) > 50 and  # Reasonably long
+                not re.search(r'(instructions?|guidelines?|specifications?|essay:)', para.lower()) and  # Not instructions
+                not re.search(r'(as requested|as an AI)', para.lower())):  # Not AI-referring
+                valid_paragraphs.append(para.strip())
+        
+        if valid_paragraphs:
+            return '\n\n'.join(valid_paragraphs)
+        
+        # Last resort: just return any substantive text we can find
+        # Find all sentences that might be part of an essay
+        sentences = re.findall(r'[A-Z][^.!?]{10,}[.!?]', text)
+        if sentences and len(sentences) >= 3:
+            return ' '.join(sentences)
+            
+        return ""
