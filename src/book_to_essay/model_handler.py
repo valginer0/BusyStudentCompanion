@@ -199,7 +199,7 @@ class DeepSeekHandler:
             # Validate text chunks exist
             if not hasattr(self, 'text_chunks') or not self.text_chunks:
                 logger.error("No text has been loaded. Please load text first.")
-                return self._generate_fallback_essay(topic, style, word_limit, reason=FallbackReason.EMPTY_CHUNKS)
+                raise RuntimeError("No text has been loaded. Please load text first.")
             
             # If source not provided, try to extract from book data
             if sources is None and hasattr(self, 'book_data'):
@@ -231,7 +231,7 @@ class DeepSeekHandler:
                 
                 if not self.text_chunks or all(not chunk.strip() for chunk in self.text_chunks):
                     logger.error("All text chunks are empty or whitespace")
-                    return self._generate_fallback_essay(topic, style, word_limit, reason=FallbackReason.EMPTY_CHUNKS)
+                    raise RuntimeError("All text chunks are empty or whitespace")
                 
                 # Analyze each chunk
                 for i, chunk in enumerate(self.text_chunks):
@@ -256,10 +256,10 @@ class DeepSeekHandler:
                         logger.error(f"Error analyzing chunk {i+1}: {str(e)}")
                         # Continue with other chunks
                 
-                # If no analyses were produced, use fallback
+                # If no analyses were produced, raise an error
                 if not chunk_analyses:
                     logger.error("No chunk analyses were produced")
-                    return self._generate_fallback_essay(topic, style, word_limit, reason=FallbackReason.CHUNK_ANALYSIS_EMPTY)
+                    raise RuntimeError("No chunk analyses were produced")
                 
                 logger.info(f"Successfully analyzed {len(chunk_analyses)} chunks")
                 
@@ -309,11 +309,11 @@ class DeepSeekHandler:
                     logger.info(f"Generated essay with length: {len(essay)}")
                 except Exception as e:
                     logger.error(f"Error generating essay from analyses: {str(e)}")
-                    return self._generate_fallback_essay(topic, style, word_limit, reason=FallbackReason.GENERATION_ERROR)
+                    raise RuntimeError(f"Essay generation failed due to an internal error: {str(e)}")
             
             except Exception as e:
                 logger.error(f"Error during chunk analysis: {str(e)}")
-                return self._generate_fallback_essay(topic, style, word_limit, reason=FallbackReason.CHUNK_ANALYSIS_ERROR)
+                raise RuntimeError(f"Chunk analysis failed due to an internal error: {str(e)}")
             
             # Post-process the essay
             try:
@@ -366,22 +366,8 @@ class DeepSeekHandler:
                     essay = '\n'.join(lines[start_line:])
                 
                 if not essay or len(essay.strip()) < 100:
-                    logger.warning("Essay too short after filtering, trying sentence extraction")
-                    # Extract all proper sentences from the original text
-                    sentences = re.findall(r'[A-Z][^.!?]*[.!?]', essay, re.IGNORECASE)
-                    if sentences and len(sentences) >= 3:
-                        essay = ' '.join(sentences)
-                    else:
-                        # Try to find a paragraph that looks like an essay
-                        paragraphs = re.split(r'\n\s*\n', essay)
-                        valid_paragraphs = []
-                        for para in paragraphs:
-                            # Check if paragraph looks like proper essay content
-                            if len(para.strip()) > 100 and not any(re.search(pattern, para) for pattern in skip_patterns):
-                                valid_paragraphs.append(para.strip())
-                        
-                        if valid_paragraphs:
-                            essay = '\n\n'.join(valid_paragraphs)
+                    logger.warning("Essay too short after filtering, raising error.")
+                    raise RuntimeError(f"Essay generation failed due to insufficient content: {len(essay)} characters")
                 
                 # Verify essay has proper structure
                 if essay and len(essay.strip()) >= 100:
@@ -413,15 +399,9 @@ class DeepSeekHandler:
                 
                 logger.info(f"After comprehensive filtering, essay starts with: {essay[:100] if essay else 'EMPTY'}...")
                 
-                # If essay is still empty or too short, create a fallback essay based on topic
-                if not essay or len(essay.strip()) < 100:
-                    logger.warning("Essay too short or empty after all filtering, using fallback")
-                    essay = self._generate_fallback_essay(topic, style, word_limit, reason=FallbackReason.ESSAY_TOO_SHORT)
-            
             except Exception as e:
                 logger.error(f"Error during essay filtering: {str(e)}")
-                # Provide a fallback essay if filtering fails
-                essay = self._generate_fallback_essay(topic, style, word_limit, reason=FallbackReason.FILTERING_ERROR)
+                raise RuntimeError(f"Essay filtering failed due to an internal error: {str(e)}")
             
             # Print the filtered essay for debugging
             print("\n" + "="*50 + " FILTERED ESSAY " + "="*50)
@@ -438,68 +418,23 @@ class DeepSeekHandler:
             raise
 
     def _generate_fallback_essay(self, topic: str, style: str, word_limit: int, reason: FallbackReason = FallbackReason.UNKNOWN) -> str:
-        """Generate a fallback essay when the main generation process fails.
+        """Generate a fallback essay when the main generation process fails."""
+        # THIS METHOD IS NOW EFFECTIVELY OBSOLETE DUE TO CHANGES IN generate_essay
+        logger.warning(f"Fallback essay generation triggered for topic '{topic}' due to {reason.name}. NOTE: This function should no longer be called.")
         
-        Args:
-            topic: The essay topic
-            style: The writing style
-            word_limit: Target word count
-            reason: The reason for falling back to this method
-            
-        Returns:
-            A basic essay on the topic
-        """
-        logger.info(f"FALLBACK_REASON: {reason} - Generating fallback essay on topic: {topic}")
-        
-        try:
-            # Use the prompt template for fallback essay generation
-            prompt = self.prompt_template.format_fallback_prompt(
-                topic=topic,
-                style=style,
-                word_limit=word_limit
-            )
-            
-            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=1024)
-            
-            # Move inputs to the same device as the model
-            device = next(self.model.parameters()).device
-            inputs = {k: v.to(device) for k, v in inputs.items()}
-            
-            with torch.no_grad():
-                response = self.model.generate(
-                    **inputs,
-                    max_new_tokens=min(1000, word_limit * 2),
-                    temperature=TEMPERATURE,
-                    do_sample=True
-                )
-            
-            fallback_essay = self.tokenizer.decode(response[0], skip_special_tokens=True)
-            
-            # Extract only the essay part
-            fallback_essay = self.prompt_template.extract_response(fallback_essay)
-            
-            logger.info(f"Fallback essay generated with {len(fallback_essay)} characters")
-            
-            # Log essay metrics
-            word_count = len(fallback_essay.split())
-            paragraph_count = fallback_essay.count('\\n\\n') + 1
-            logger.info(f"FALLBACK_METRICS: chars={len(fallback_essay)}, words={word_count}, paragraphs={paragraph_count}")
-            
-            return fallback_essay
-            
-        except Exception as e:
-            logger.error(f"Error generating fallback essay: {str(e)}")
-            
-            # If even the fallback fails, try template-based generation as last resort
-            logger.warning("FALLBACK_ESCALATION: Primary fallback failed, trying template-based generation")
-            
-            # Try to determine if the topic is about a character, theme, or literary device
-            if any(keyword in topic.lower() for keyword in ["character", "protagonist", "antagonist", "person"]):
-                return self._generate_character_essay_template(topic, style, word_limit)
-            elif any(keyword in topic.lower() for keyword in ["theme", "motif", "symbol", "imagery"]):
-                return self._generate_theme_essay_template(topic, style, word_limit)
-            else:
-                return self._generate_literary_device_essay_template(topic, style, word_limit)
+        # Simple template generation based on topic keywords
+        if "character" in topic.lower():
+            return f"""The character development related to {topic} represents a masterful example of literary craftsmanship. Through careful examination of the text, we can identify how the author constructs this character study to convey deeper thematic meaning and psychological insight.
+
+In the early portions of the narrative, {topic} is established through specific character actions and dialogue that reveal fundamental traits and motivations. The author's initial characterization creates a foundation upon which more complex development can build. These early scenes are crucial for understanding the character's journey and the narrative's overall trajectory.
+
+As the work progresses, complications arise that challenge and deepen our understanding of {topic}. The character's responses to conflict reveal layers of complexity that move beyond simplistic interpretations. Notable scenes demonstrating this include moments of internal conflict and decisive action that show character growth or revealing contradictions.
+
+The relationship between {topic} and other characters provides additional insight into the author's thematic concerns. These interpersonal dynamics highlight questions of identity, morality, and human connection that extend beyond the individual character study. Through these relationships, the author explores broader questions about human nature and social structures.
+
+By the work's conclusion, the development of {topic} has reached a resolution that reflects the author's overall literary vision. Whether through transformation, tragic realization, or confirmed identity, the character's journey illustrates core themes of the work. This resolution demonstrates how character development serves as a vehicle for the author's broader artistic and philosophical aims.
+
+This analysis of {topic} demonstrates how character study provides a lens through which to understand the work's literary merit and thematic depth. By examining specific textual elements related to characterization, we gain insight into both the technical craftsmanship and meaningful content of the literature."""
 
     def _generate_character_essay_template(self, topic: str, style: str, word_limit: int) -> str:
         """Generate a character-focused essay template."""
