@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 from pytest_mock import MockerFixture
+import ebooklib
 
 from src.book_to_essay.ai_book_to_essay_generator import AIBookEssayGenerator
 
@@ -248,6 +249,75 @@ def test_load_pdf_file_success(mocker, temp_cache_dir):
     assert generator.sources[0]['path'] == file_path
     assert generator.sources[0]['name'] == "test_book.pdf"
     assert generator.sources[0]['type'] == 'pdf'
+
+def test_load_epub_file_success(mocker, temp_cache_dir):
+    """Test successful processing of an EPUB file via load_epub_file, mocking ebooklib."""
+    generator = AIBookEssayGenerator()
+    generator.cache_manager.cache_dir = Path(temp_cache_dir)
+    sample_epub_content_part1 = b'<html><body><p>Chapter 1 content.</p></body></html>'
+    sample_epub_content_part2 = b'<html><body><p>Chapter 2 content.</p></body></html>'
+    expected_text_part1 = "Chapter 1 content."
+    expected_text_part2 = "Chapter 2 content."
+
+    # Create dummy test file path (doesn't need to exist as ebooklib is mocked)
+    file_path = os.path.join(temp_cache_dir, "test_book.epub")
+    Path(file_path).touch()
+
+    # Mock dependencies: cache, model, and ebooklib
+    mock_get_cache = mocker.patch.object(generator.cache_manager, 'get_cached_content', return_value=None)
+    mock_cache_content = mocker.patch.object(generator.cache_manager, 'cache_content')
+    mock_handler_instance = MagicMock()
+    mock_handler_instance.process_text = MagicMock()
+    mocker.patch.object(AIBookEssayGenerator, 'model', new_callable=mocker.PropertyMock, return_value=mock_handler_instance)
+
+    # --- Mock ebooklib --- 
+    mock_item1 = MagicMock()
+    mock_item1.get_content.return_value = sample_epub_content_part1
+    mock_item1.get_type.return_value = ebooklib.ITEM_DOCUMENT # Configure get_type
+    mock_item2 = MagicMock()
+    mock_item2.get_content.return_value = sample_epub_content_part2
+    mock_item2.get_type.return_value = ebooklib.ITEM_DOCUMENT # Configure get_type
+    
+    mock_epub_book = MagicMock()
+    # Mock get_items() as used by the code, not get_items_of_type()
+    mock_epub_book.get_items.return_value = [mock_item1, mock_item2] 
+    
+    mock_read_epub = mocker.patch('src.book_to_essay.ai_book_to_essay_generator.epub.read_epub', return_value=mock_epub_book)
+    # ---------------------
+
+    # Call the public loading method
+    generator.load_epub_file(file_path)
+
+    # Assertions
+    mock_get_cache.assert_called_once_with(file_path)
+    mock_read_epub.assert_called_once_with(file_path)
+    # Assert that get_items was called (as used by the code)
+    mock_epub_book.get_items.assert_called_once()
+    assert mock_item1.get_content.call_count == 1
+    assert mock_item1.get_type.call_count == 1 # Check get_type was called
+    assert mock_item2.get_content.call_count == 1
+    assert mock_item2.get_type.call_count == 1 # Check get_type was called
+
+    # Assert model processing was called with concatenated & cleaned text (+ newline per item)
+    expected_content = f"{expected_text_part1}\n{expected_text_part2}\n"
+    mock_handler_instance.process_text.assert_called_once_with(expected_content)
+
+    # Assert cache was updated
+    mock_cache_content.assert_called_once()
+    call_args = mock_cache_content.call_args[0]
+    assert call_args[0] == file_path
+    cached_data = call_args[1]
+    assert cached_data['content'] == expected_content
+    assert cached_data['source']['path'] == file_path
+    assert cached_data['source']['name'] == "test_book.epub"
+    assert cached_data['source']['type'] == 'epub'
+
+    # Assert generator state was updated (content has extra newline added by _process_file_content)
+    assert generator.content.strip() == expected_content.strip()
+    assert len(generator.sources) == 1
+    assert generator.sources[0]['path'] == file_path
+    assert generator.sources[0]['name'] == "test_book.epub"
+    assert generator.sources[0]['type'] == 'epub'
 
 # === Additional Tests ===
 
