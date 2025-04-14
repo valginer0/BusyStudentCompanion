@@ -1,7 +1,11 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
+from pathlib import Path
+import pickle
+import hashlib
+
 from src.book_to_essay.model_handler import DeepSeekHandler
-from src.book_to_essay.config import MAX_CHUNK_SIZE
+from src.book_to_essay.config import MAX_CHUNK_SIZE, MAX_CHUNKS_PER_ANALYSIS, MODEL_NAME
 
 
 @pytest.fixture
@@ -99,4 +103,63 @@ class TestDeepSeekHandler:
         assert len(handler.text_chunks) == test_max_chunks, \
             f"Should truncate chunks to MAX_CHUNKS_PER_ANALYSIS ({test_max_chunks})"
 
-    # --- More tests for process_text will be added below ---
+    # --- Tests for Cache Handling ---
+
+    def test_get_cached_chunk_analysis_file_not_exists(self, handler, mocker):
+        """Test _get_cached_chunk_analysis when the cache file does not exist."""
+        # Mock the path object and its exists method
+        mock_path_instance = MagicMock(spec=Path)
+        mock_path_instance.exists.return_value = False
+        mocker.patch('src.book_to_essay.model_handler.Path', return_value=mock_path_instance)
+
+        # Mock the helper methods called before Path()
+        mocker.patch.object(handler, '_get_chunk_cache_key', return_value='dummy_key')
+        mocker.patch.object(handler, '_get_chunk_cache_path', return_value=mock_path_instance)
+
+        # Set chunk_cache_dir needed by _get_chunk_cache_path (if not mocked away)
+        # Ensure the fixture sets up necessary attributes if not mocking __init__ fully
+        handler.chunk_cache_dir = Path('/fake/cache/dir') # Needed by real _get_chunk_cache_path
+
+        result = handler._get_cached_chunk_analysis(
+            chunk="test chunk",
+            topic="test topic",
+            style="test style",
+            word_limit=100
+        )
+
+        assert result is None, "Should return None when cache file doesn't exist"
+        handler._get_chunk_cache_key.assert_called_once_with("test chunk", "test topic", "test style", 100)
+        handler._get_chunk_cache_path.assert_called_once_with('dummy_key')
+        mock_path_instance.exists.assert_called_once()
+
+    def test_get_cached_chunk_analysis_file_exists(self, handler, mocker):
+        """Test _get_cached_chunk_analysis when the cache file exists and is valid."""
+        # Mock the path object and its exists method
+        mock_path_instance = MagicMock(spec=Path)
+        mock_path_instance.exists.return_value = True
+        mocker.patch('src.book_to_essay.model_handler.Path', return_value=mock_path_instance)
+
+        # Mock the helper methods called before Path()
+        mocker.patch.object(handler, '_get_chunk_cache_key', return_value='dummy_key')
+        mocker.patch.object(handler, '_get_chunk_cache_path', return_value=mock_path_instance)
+        handler.chunk_cache_dir = Path('/fake/cache/dir')
+
+        # Mock open and pickle.load
+        mock_file = MagicMock()
+        mock_open = mocker.patch('builtins.open', mocker.mock_open(read_data=b'dummy')) # read_data needed but not used by pickle mock
+        mock_pickle_load = mocker.patch('pickle.load', return_value={'analysis': 'cached data'})
+
+        result = handler._get_cached_chunk_analysis(
+            chunk="test chunk",
+            topic="test topic",
+            style="test style",
+            word_limit=100
+        )
+
+        expected_data = {'analysis': 'cached data'}
+        assert result == expected_data, "Should return the cached data"
+        handler._get_chunk_cache_key.assert_called_once_with("test chunk", "test topic", "test style", 100)
+        handler._get_chunk_cache_path.assert_called_once_with('dummy_key')
+        mock_path_instance.exists.assert_called_once()
+        mock_open.assert_called_once_with(mock_path_instance, 'rb')
+        mock_pickle_load.assert_called_once() # Check it was called, args depend on file handle mock
