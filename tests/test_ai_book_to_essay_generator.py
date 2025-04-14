@@ -1,9 +1,12 @@
 """Tests for the AI Book Essay Generator."""
 import os
-import pytest
 from pathlib import Path
+from unittest.mock import MagicMock, Mock
+
+import pytest
+from pytest_mock import MockerFixture
+
 from src.book_to_essay.ai_book_to_essay_generator import AIBookEssayGenerator
-from unittest.mock import MagicMock
 
 def create_test_file(path: str, content: str = "test content"):
     """Create a test file with content."""
@@ -139,6 +142,51 @@ def test_generate_essay_handler_error(mocker, temp_cache_dir, sample_pdf_content
         generator.generate_essay("Test Topic", 100, "academic")
 
     mock_handler_instance.generate_essay.assert_called_once()
+
+# === Tests for Specific File Types ===
+
+def test_process_txt_file_success(mocker, temp_cache_dir):
+    """Test successful processing of a TXT file via load_txt_file."""
+    generator = AIBookEssayGenerator()
+    generator.cache_manager.cache_dir = Path(temp_cache_dir)
+    sample_txt_content = "This is simple text content."
+
+    # Create test file
+    file_path = os.path.join(temp_cache_dir, "test_book.txt")
+    create_test_file(file_path, sample_txt_content)
+
+    # Mock dependencies: cache manager and model handler's process_text
+    mock_get_cache = mocker.patch.object(generator.cache_manager, 'get_cached_content', return_value=None)
+    mock_cache_content = mocker.patch.object(generator.cache_manager, 'cache_content')
+    # Mock the model property to return a mock handler
+    mock_handler_instance = MagicMock()
+    mock_handler_instance.process_text = MagicMock()
+    mocker.patch.object(AIBookEssayGenerator, 'model', new_callable=mocker.PropertyMock, return_value=mock_handler_instance)
+
+    # Call the public loading method
+    generator.load_txt_file(file_path)
+
+    # Assertions
+    mock_get_cache.assert_called_once_with(file_path)
+    # Assert that the handler's process_text was called with the content
+    mock_handler_instance.process_text.assert_called_once_with(sample_txt_content)
+    # Assert cache was updated
+    # We need to check the arguments cache_content was called with
+    mock_cache_content.assert_called_once()
+    call_args = mock_cache_content.call_args[0]
+    assert call_args[0] == file_path
+    cached_data = call_args[1]
+    assert cached_data['content'] == sample_txt_content
+    assert cached_data['source']['path'] == file_path
+    assert cached_data['source']['name'] == "test_book.txt"
+    assert cached_data['source']['type'] == 'txt'
+    # Assert generator state was updated
+    assert generator.content.strip() == sample_txt_content # strip trailing newline added
+    assert len(generator.sources) == 1
+    assert generator.sources[0]['path'] == file_path
+    assert generator.sources[0]['name'] == "test_book.txt"
+    assert generator.sources[0]['type'] == 'txt'
+
 
 # === Additional Tests ===
 
