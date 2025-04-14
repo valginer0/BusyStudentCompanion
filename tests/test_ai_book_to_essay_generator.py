@@ -321,22 +321,24 @@ def test_load_epub_file_success(mocker, temp_cache_dir):
 
 # === Additional Tests ===
 
-@pytest.mark.skip(reason="AIBookEssayGenerator in this version lacks a public load_file method")
-def test_load_file_unsupported_type(mocker, temp_cache_dir):
-    """Test ValueError is raised when trying to load an unsupported file type."""
+@pytest.mark.parametrize(
+    "load_method_name, extension",
+    [
+        ("load_txt_file", ".txt"),
+        ("load_pdf_file", ".pdf"),
+        ("load_epub_file", ".epub"),
+    ]
+)
+def test_load_file_not_found(load_method_name, extension):
+    """Test that FileNotFoundError is raised when loading a non-existent file."""
     generator = AIBookEssayGenerator()
-    generator.cache_manager.cache_dir = Path(temp_cache_dir)
-    mock_file_path = "/fake/path/document.zip"
-
-    # Mock os.path.exists to return True (file exists but is wrong type)
-    mocker.patch('os.path.exists', return_value=True)
+    non_existent_file = f"/path/to/non_existent_file{extension}"
     
-    # Mock cache methods (simulate cache miss) - needed as load_file checks cache
-    mocker.patch.object(generator.cache_manager, 'get_cached_content', return_value=None)
-
-    # Assert ValueError is raised due to unsupported extension in load_file
-    with pytest.raises(ValueError, match=f"Unsupported file type: {mock_file_path}"):
-        generator.load_file(mock_file_path)
+    # Get the actual method from the generator instance
+    load_method = getattr(generator, load_method_name)
+    
+    with pytest.raises(FileNotFoundError, match=f"File not found: {non_existent_file}"):
+        load_method(non_existent_file)
 
 def test_generate_essay_model_error(mocker, temp_cache_dir):
     """Test handling of errors raised by the model during essay generation."""
