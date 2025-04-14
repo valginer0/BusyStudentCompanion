@@ -163,3 +163,20 @@ class TestDeepSeekHandler:
         mock_path_instance.exists.assert_called_once()
         mock_open.assert_called_once_with(mock_path_instance, 'rb')
         mock_pickle_load.assert_called_once() # Check it was called, args depend on file handle mock
+
+    def test_get_chunk_cache_key(self, handler):
+        """Test that _get_chunk_cache_key produces a consistent SHA256 hash."""
+        chunk = "This is a test chunk."
+        topic = "Test Topic"
+        style = "Academic"
+        word_limit = 500
+
+        # Calculate expected key manually for verification
+        key_string = f"{chunk}-{topic}-{style}-{word_limit}-{MODEL_NAME}"
+        expected_hash = hashlib.sha256(key_string.encode('utf-8')).hexdigest()
+
+        # Call the method under test
+        actual_key = handler._get_chunk_cache_key(chunk, topic, style, word_limit)
+
+        assert actual_key == expected_hash, "Generated cache key does not match expected hash"
+        assert len(actual_key) == 64, "Cache key should be a 64-character SHA256 hash"
