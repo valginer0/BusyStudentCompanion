@@ -548,11 +548,11 @@ This analysis of {topic} as a literary device demonstrates the inseparability of
             return ""
 
     def _get_chunk_cache_key(self, chunk: str, topic: str, style: str, word_limit: int) -> str:
-        """Generate a cache key for a chunk based on its content and generation parameters."""
-        # Create a unique hash based on chunk content and generation parameters
-        cache_key_data = f"{chunk}_{topic}_{style}_{word_limit}_{MODEL_NAME}"
-        return hashlib.md5(cache_key_data.encode()).hexdigest()
-    
+        """Generate a unique cache key for a chunk analysis."""
+        # Include model name in the key to avoid conflicts if the model changes
+        key_string = f"{chunk}-{topic}-{style}-{word_limit}-{self.model_name}"
+        return hashlib.sha256(key_string.encode('utf-8')).hexdigest()
+
     def _get_chunk_cache_path(self, cache_key: str) -> Path:
         """Get the cache file path for a chunk analysis."""
         return self.chunk_cache_dir / f"{cache_key}.pkl"

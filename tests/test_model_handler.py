@@ -13,7 +13,13 @@ def handler():
     """Fixture to create a DeepSeekHandler instance with mocked __init__."""
     # Mock __init__ to avoid actual model loading during testing simple methods
     with patch('src.book_to_essay.model_handler.DeepSeekHandler.__init__', return_value=None) as mock_init:
-        instance = DeepSeekHandler() # This call uses the mocked __init__
+        # Pass dummy model/tokenizer to satisfy __init__ signature if needed,
+        # but they won't be used if mocking is correct.
+        instance = DeepSeekHandler()
+        # Explicitly set model_name as it's set in the real __init__ and used by cache key
+        instance.model_name = MODEL_NAME
+        # Ensure chunk_cache_dir exists for tests that might need it (like _get_chunk_cache_path)
+        instance.chunk_cache_dir = Path('/tmp/test_cache') # Use a temporary path
         # Manually initialize attributes normally set by __init__ that process_text might rely on
         instance.text_chunks = []
         # process_text doesn't seem to rely on tokenizer or model directly
@@ -171,8 +177,9 @@ class TestDeepSeekHandler:
         style = "Academic"
         word_limit = 500
 
-        # Calculate expected key manually for verification
-        key_string = f"{chunk}-{topic}-{style}-{word_limit}-{MODEL_NAME}"
+        # Calculate expected key using the handler's actual model_name attribute
+        # (Fixture should ensure handler.model_name is set correctly)
+        key_string = f"{chunk}-{topic}-{style}-{word_limit}-{handler.model_name}"
         expected_hash = hashlib.sha256(key_string.encode('utf-8')).hexdigest()
 
         # Call the method under test
