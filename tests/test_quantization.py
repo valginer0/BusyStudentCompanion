@@ -77,14 +77,26 @@ class TestQuantization(unittest.TestCase):
                         self.assertEqual(config['method'], '4bit')
 
     def test_cpu_quantization_config(self):
-        """Test 8-bit quantization config for CPU-only environment."""
+        """Test standard CPU config when no GPU is available."""
         with patch('torch.cuda.is_available', return_value=False):
-            config = QuantizationConfig.get_config()
-            
-            # Check if correct quantization method was logged
-            quant_logs = [msg for msg in self.log_messages if "Using 8-bit dynamic quantization (CPU)" in msg]
-            self.assertTrue(any(quant_logs))
-            self.assertEqual(config['method'], '8bit_cpu')
+            # Simulate HAS_GPU being False based on the patch
+            with patch('src.book_to_essay.config.HAS_GPU', False):
+                config = QuantizationConfig.get_config()
+
+                # Check if the correct configuration was returned
+                self.assertEqual(config['method'], 'cpu')
+                self.assertEqual(config['load_config']['device_map'], 'cpu')
+                self.assertIsNone(config['post_load_quantize'])
+
+                # Check if the correct log message was generated
+                expected_log = "Using standard CPU configuration (no quantization)"
+                cpu_logs = [msg for msg in self.log_messages if expected_log in msg]
+                self.assertTrue(any(cpu_logs), f"Expected log message '{expected_log}' not found.")
+
+                # Ensure 8-bit log is NOT present
+                unexpected_log = "Using 8-bit dynamic quantization (CPU)"
+                quant_logs = [msg for msg in self.log_messages if unexpected_log in msg]
+                self.assertFalse(any(quant_logs), f"Unexpected log message '{unexpected_log}' found.")
 
     @patch('transformers.AutoTokenizer.from_pretrained')
     @patch('transformers.AutoModelForCausalLM.from_pretrained')

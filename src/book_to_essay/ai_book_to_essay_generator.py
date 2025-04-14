@@ -155,7 +155,6 @@ class AIBookEssayGenerator:
         if cached_essay is not None:
             return cached_essay
         
-        # Generate essay with the enhanced model method
         try:
             logger.info(f"Generating essay with prompt: {prompt}, word_limit: {word_limit}, style: {style}")
             
@@ -171,20 +170,52 @@ class AIBookEssayGenerator:
                 
             logger.info(f"Model has {len(self.model.text_chunks)} text chunks to process")
             
-            essay = self.model.generate_essay(
-                topic=prompt,
-                word_limit=word_limit,
-                style=style.lower(),
-                sources=self.sources
-            )
-            
-            # Cache the generated essay
+            essay = None
+            try:
+                essay = self.model.generate_essay(
+                    topic=prompt,
+                    word_limit=word_limit,
+                    style=style.lower(),
+                    sources=self.sources
+                )
+            except Exception as e:
+                logger.warning(f"Initial essay generation failed: {str(e)}")
+                raise ValueError(f"Error generating essay: {str(e)}") from e
+
+            # If initial generation SUCCEEDED but returned empty, try fallback
+            if not essay:
+                logger.info("Initial generation returned empty result. Attempting fallback...")
+                try:
+                    essay = self.model.generate_fallback_essay(
+                        topic=prompt,
+                        word_limit=word_limit,
+                        style=style.lower(),
+                        sources=self.sources
+                    )
+                    if essay:
+                        logger.info("Fallback essay generation successful.")
+                    else:
+                        logger.error("Fallback essay generation also returned empty result.")
+                except Exception as fallback_e:
+                    logger.error(f"Fallback essay generation also failed: {fallback_e}")
+                    # If fallback fails, raise an error referencing the original one if it exists
+                    error_msg = f"Error generating essay: {str(fallback_e)}"
+                    raise ValueError(error_msg) from fallback_e
+
+            # If fallback also failed or returned empty, raise final error
+            if not essay:
+                raise ValueError("Failed to generate essay after fallback.")
+                
+            # Cache the generated essay (only if successful)
             self.cache_manager.cache_model_output(cache_key, self.content, essay)
             
             return essay
         except Exception as e:
-            logger.error(f"Error generating essay: {str(e)}")
-            raise
+            # This outer catch is a safety net, specific errors should be handled above
+            # Log the error including traceback for better debugging
+            logger.exception(f"Unhandled error during essay generation process: {str(e)}")
+            # Raise a generic error, potentially wrapping the caught one
+            raise ValueError(f"An unexpected error occurred during essay generation: {str(e)}") from e
 
     def extract_quotes(self, num_quotes: int = 5) -> List[str]:
         """Extract relevant quotes from the content."""
