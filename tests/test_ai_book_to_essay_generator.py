@@ -322,23 +322,71 @@ def test_load_epub_file_success(mocker, temp_cache_dir):
 # === Additional Tests ===
 
 @pytest.mark.parametrize(
-    "load_method_name, extension",
+    "load_method_name, mock_target, file_extension, error_message_part",
     [
-        ("load_txt_file", ".txt"),
-        ("load_pdf_file", ".pdf"),
-        ("load_epub_file", ".epub"),
+        (
+            "load_txt_file",
+            "src.book_to_essay.ai_book_to_essay_generator.open", # Target module-specific open
+            ".txt",
+            "Error reading TXT"
+        ),
+        (
+            "load_pdf_file",
+            "src.book_to_essay.ai_book_to_essay_generator.fitz.open",
+            ".pdf",
+            "Error reading PDF"
+        ),
+        (
+            "load_epub_file",
+            "src.book_to_essay.ai_book_to_essay_generator.epub.read_epub",
+            ".epub",
+            "Error reading EPUB"
+        ),
     ]
 )
-def test_load_file_not_found(load_method_name, extension):
-    """Test that FileNotFoundError is raised when loading a non-existent file."""
+def test_load_file_processing_error(mocker, tmp_path, load_method_name, mock_target, file_extension, error_message_part):
+    """Test that errors during file processing are caught and raise ValueError."""
     generator = AIBookEssayGenerator()
-    non_existent_file = f"/path/to/non_existent_file{extension}"
+    file_path = tmp_path / f"test_file{file_extension}"
+    file_path.touch()
     
-    # Get the actual method from the generator instance
+    # Mock cache miss so processing is attempted
+    mocker.patch.object(generator.cache_manager, 'get_cached_content', return_value=None)
+
+    # Special handling for TXT read error vs. PDF/EPUB processing errors
+    if load_method_name == "load_txt_file":
+        mock_file = MagicMock()
+        # Simulate error during file.read() within the 'with' block
+        mock_file.read.side_effect = IOError("Simulated read error")
+        # Make the mock usable as a context manager
+        mock_file.__enter__.return_value = mock_file 
+        mock_file.__exit__.return_value = None # Ensure __exit__ doesn't suppress errors
+        # Patch the module-specific 'open' to return our mock file object
+        mock_open_patch = mocker.patch(mock_target, return_value=mock_file)
+        # We need to track the read call for assertion
+        mocked_processor_call_check = mock_file.read 
+    else:
+        # Mock the specific processing function for PDF/EPUB to raise an error
+        mocked_processor = mocker.patch(mock_target, side_effect=Exception("Simulated processing error"))
+        # Track the processor call for assertion
+        mocked_processor_call_check = mocked_processor 
+
+    # Get the actual load method
     load_method = getattr(generator, load_method_name)
-    
-    with pytest.raises(FileNotFoundError, match=f"File not found: {non_existent_file}"):
-        load_method(non_existent_file)
+
+    # Assert that ValueError is raised with the expected message
+    with pytest.raises(ValueError, match=error_message_part):
+        load_method(str(file_path))
+
+    # Ensure the correct mocked part was called
+    if load_method_name == "load_txt_file":
+        # Check that our patched 'open' was called correctly
+        mock_open_patch.assert_called_once_with(str(file_path), 'r', encoding='utf-8')
+        # Check that 'read' was called on the mock file object
+        mocked_processor_call_check.assert_called_once()
+    else:
+        # Check that the PDF/EPUB processor function was called
+        mocked_processor_call_check.assert_called_once_with(str(file_path))
 
 def test_generate_essay_model_error(mocker, temp_cache_dir):
     """Test handling of errors raised by the model during essay generation."""

@@ -70,26 +70,28 @@ class AIBookEssayGenerator:
 
     def load_txt_file(self, file_path: str):
         """Load content from a text file with caching."""
-        def process_txt(file_path):
+        def process_txt(file_path: str) -> str:
+            """Reads content from a TXT file."""
+            logger.info(f"Processing TXT file: {file_path}")
             try:
+                # Ensure correct encoding is used
                 with open(file_path, 'r', encoding='utf-8') as file:
-                    text = file.read()
-                    logger.info(f"Processing text with model instance {id(self.model)}")
-                    self.model.process_text(text)
-                    return text
-            except UnicodeDecodeError:
-                # Try different encodings
-                for encoding in ['latin-1', 'cp1252', 'iso-8859-1']:
                     try:
-                        with open(file_path, 'r', encoding=encoding) as file:
-                            text = file.read()
-                            if text.strip():
-                                logger.info(f"Processing text with model instance {id(self.model)}")
-                                self.model.process_text(text)
-                                return text
-                    except UnicodeDecodeError:
-                        continue
-                raise ValueError(f"Could not decode file {file_path} with any supported encoding")
+                        text = file.read()
+                        logger.info(f"Processing text with model instance {id(self.model)}")
+                        self.model.process_text(text)
+                        return text
+                    except (IOError, UnicodeDecodeError) as e:
+                        logger.error(f"Error reading TXT file {file_path}: {e}")
+                        raise ValueError(f"Error reading TXT file: {e}") from e
+            except FileNotFoundError:
+                # Catching FileNotFoundError here for clarity, although load_file also checks
+                logger.error(f"TXT file not found: {file_path}")
+                raise # Re-raise FileNotFoundError to be handled by the caller
+            except Exception as e:
+                # Catch any other potential errors during open
+                logger.error(f"Unexpected error opening or processing TXT file {file_path}: {e}")
+                raise ValueError(f"Unexpected error processing TXT file: {e}") from e
         
         self._process_file_content(file_path, process_txt)
 
