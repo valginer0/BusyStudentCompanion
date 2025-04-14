@@ -15,6 +15,7 @@ from .config import (
 )
 from .prompts.factory import PromptTemplateFactory
 from .fallback import FallbackReason
+import nltk # Added for sentence tokenization
 
 logger = logging.getLogger(__name__)
 
@@ -95,40 +96,69 @@ class DeepSeekHandler:
             raise RuntimeError(f"Failed to initialize model: {str(e)}")
         
     def process_text(self, text: str) -> None:
-        """Process input text and store it for later use."""
-        if not text:
-            logger.warning("Empty text provided to process_text")
+        """Process input text, tokenize into sentences, and store as chunks."""
+        stripped_text = text.strip()
+        if not stripped_text:
+            logger.warning("Empty or whitespace-only text provided to process_text")
+            self.text_chunks = []
             return
-            
-        logger.info(f"Processing text with {len(text)} characters")
-        
-        # Clear existing chunks
+
+        logger.info(f"Processing text with {len(stripped_text)} characters")
         self.text_chunks = []
-        
-        # Split text into manageable chunks for processing
-        if len(text) > MAX_CHUNK_SIZE * 2:  # Only chunk if text is significantly large
-            logger.info(f"Text is large, splitting into chunks of max {MAX_CHUNK_SIZE} characters")
-            
-            # Split by paragraphs first
-            paragraphs = text.split('\n\n')
+
+        # Only chunk if the stripped text is longer than the max chunk size
+        if len(stripped_text) > MAX_CHUNK_SIZE:
+            logger.info(f"Text is large ({len(stripped_text)} chars), splitting into chunks (max {MAX_CHUNK_SIZE} chars)")
+            try:
+                # Ensure NLTK data is available (consider downloading separately in setup)
+                nltk.data.find('tokenizers/punkt')
+            except LookupError:
+                 logger.warning("NLTK 'punkt' model not found. Attempting download...")
+                 try:
+                     nltk.download('punkt', quiet=True)
+                     logger.info("NLTK 'punkt' downloaded successfully.")
+                 except Exception as e:
+                     logger.error(f"Failed to download NLTK 'punkt': {e}. Proceeding without sentence splitting.")
+                     self.text_chunks = [stripped_text] # Fallback if download fails
+                     return
+
+            sentences = nltk.sent_tokenize(stripped_text)
             current_chunk = ""
             
-            for paragraph in paragraphs:
-                # If adding this paragraph would exceed chunk size, store current chunk and start new one
-                if len(current_chunk) + len(paragraph) > MAX_CHUNK_SIZE and current_chunk:
-                    self.text_chunks.append(current_chunk)
-                    current_chunk = paragraph
-                else:
-                    # Add paragraph separator if not the first paragraph in chunk
+            for sentence in sentences:
+                sentence_stripped = sentence.strip()
+                if not sentence_stripped:
+                    continue # Skip empty sentences
+
+                sentence_len = len(sentence_stripped)
+                current_chunk_len = len(current_chunk)
+
+                # Case 1: Sentence itself is too long
+                if sentence_len > MAX_CHUNK_SIZE:
+                    # Add the current chunk if it exists
                     if current_chunk:
-                        current_chunk += "\n\n" + paragraph
+                        self.text_chunks.append(current_chunk.strip())
+                    # Add the long sentence as its own chunk
+                    self.text_chunks.append(sentence_stripped)
+                    current_chunk = "" # Reset for the next sentence
+                    continue
+
+                # Case 2: Adding sentence exceeds chunk size
+                # Check length considering a space separator if needed
+                if current_chunk_len > 0 and current_chunk_len + sentence_len + 1 > MAX_CHUNK_SIZE:
+                    self.text_chunks.append(current_chunk.strip())
+                    current_chunk = sentence_stripped
+                # Case 3: Add sentence to the current chunk
+                else:
+                    if current_chunk: # Add space separator
+                        current_chunk += " " + sentence_stripped
                     else:
-                        current_chunk = paragraph
-            
-            # Add the last chunk if not empty
+                        current_chunk = sentence_stripped
+
+            # Add the last remaining chunk if not empty
             if current_chunk:
-                self.text_chunks.append(current_chunk)
-                
+                self.text_chunks.append(current_chunk.strip())
+
             # If we have too many chunks, select representative ones
             if len(self.text_chunks) > MAX_CHUNKS_PER_ANALYSIS:
                 logger.info(f"Too many chunks ({len(self.text_chunks)}), selecting {MAX_CHUNKS_PER_ANALYSIS} representative chunks")
@@ -137,49 +167,13 @@ class DeepSeekHandler:
                 selected_chunks = []
                 for i in range(MAX_CHUNKS_PER_ANALYSIS):
                     idx = min(int(i * step), len(self.text_chunks) - 1)
-                    selected_chunks.append(self.text_chunks[idx])
+                    selected_chunks.append(self.text_chunks[idx]) # Chunks are already stripped
                 self.text_chunks = selected_chunks
         else:
-            # For smaller texts, just use the whole text as a single chunk
-            self.text_chunks = [text]
-            
-        logger.info(f"Text processed into {len(self.text_chunks)} chunks")
+            # For smaller texts, just use the whole stripped text as a single chunk
+            self.text_chunks = [stripped_text]
 
-    def _get_chunk_cache_key(self, chunk: str, topic: str, style: str, word_limit: int) -> str:
-        """Generate a cache key for a chunk based on its content and generation parameters."""
-        # Create a unique hash based on chunk content and generation parameters
-        cache_key_data = f"{chunk}_{topic}_{style}_{word_limit}_{MODEL_NAME}"
-        return hashlib.md5(cache_key_data.encode()).hexdigest()
-    
-    def _get_chunk_cache_path(self, cache_key: str) -> Path:
-        """Get the cache file path for a chunk analysis."""
-        return self.chunk_cache_dir / f"{cache_key}.pkl"
-    
-    def _get_cached_chunk_analysis(self, chunk: str, topic: str, style: str, word_limit: int) -> str:
-        """Get cached chunk analysis if it exists."""
-        try:
-            cache_key = self._get_chunk_cache_key(chunk, topic, style, word_limit)
-            cache_path = self._get_chunk_cache_path(cache_key)
-            
-            if cache_path.exists():
-                logger.info(f"Using cached chunk analysis for key: {cache_key[:8]}...")
-                with open(cache_path, 'rb') as f:
-                    return pickle.load(f)
-        except Exception as e:
-            logger.error(f"Error accessing chunk cache: {str(e)}")
-        return None
-    
-    def _cache_chunk_analysis(self, chunk: str, topic: str, style: str, word_limit: int, analysis: str):
-        """Cache chunk analysis for future use."""
-        try:
-            cache_key = self._get_chunk_cache_key(chunk, topic, style, word_limit)
-            cache_path = self._get_chunk_cache_path(cache_key)
-            
-            with open(cache_path, 'wb') as f:
-                pickle.dump(analysis, f)
-            logger.info(f"Cached chunk analysis with key: {cache_key[:8]}...")
-        except Exception as e:
-            logger.error(f"Error caching chunk analysis: {str(e)}")
+        logger.info(f"Text processed into {len(self.text_chunks)} chunks")
 
     def generate_essay(self, topic: str, word_limit: int = 500, style: str = "academic", sources: List[Dict] = None) -> str:
         """Generate an essay using chunk-based analysis.
@@ -552,6 +546,42 @@ This analysis of {topic} as a literary device demonstrates the inseparability of
         except Exception as e:
             logger.error(f"Error analyzing chunk: {str(e)}")
             return ""
+
+    def _get_chunk_cache_key(self, chunk: str, topic: str, style: str, word_limit: int) -> str:
+        """Generate a cache key for a chunk based on its content and generation parameters."""
+        # Create a unique hash based on chunk content and generation parameters
+        cache_key_data = f"{chunk}_{topic}_{style}_{word_limit}_{MODEL_NAME}"
+        return hashlib.md5(cache_key_data.encode()).hexdigest()
+    
+    def _get_chunk_cache_path(self, cache_key: str) -> Path:
+        """Get the cache file path for a chunk analysis."""
+        return self.chunk_cache_dir / f"{cache_key}.pkl"
+    
+    def _get_cached_chunk_analysis(self, chunk: str, topic: str, style: str, word_limit: int) -> str:
+        """Get cached chunk analysis if it exists."""
+        try:
+            cache_key = self._get_chunk_cache_key(chunk, topic, style, word_limit)
+            cache_path = self._get_chunk_cache_path(cache_key)
+            
+            if cache_path.exists():
+                logger.info(f"Using cached chunk analysis for key: {cache_key[:8]}...")
+                with open(cache_path, 'rb') as f:
+                    return pickle.load(f)
+        except Exception as e:
+            logger.error(f"Error accessing chunk cache: {str(e)}")
+        return None
+    
+    def _cache_chunk_analysis(self, chunk: str, topic: str, style: str, word_limit: int, analysis: str):
+        """Cache chunk analysis for future use."""
+        try:
+            cache_key = self._get_chunk_cache_key(chunk, topic, style, word_limit)
+            cache_path = self._get_chunk_cache_path(cache_key)
+            
+            with open(cache_path, 'wb') as f:
+                pickle.dump(analysis, f)
+            logger.info(f"Cached chunk analysis with key: {cache_key[:8]}...")
+        except Exception as e:
+            logger.error(f"Error caching chunk analysis: {str(e)}")
 
     def _truncate_text(self, text: str, target_words: int) -> str:
         """Truncate text to a target word count while preserving paragraph structure.

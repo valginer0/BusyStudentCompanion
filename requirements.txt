@@ -9,6 +9,7 @@ beautifulsoup4==4.12.2
 accelerate==0.25.0
 scipy==1.11.4  # Required for bitsandbytes, using newer version with pre-built wheels
 bitsandbytes==0.39.0  # Latest version from test.pypi.org that supports CPU quantization
+nltk==3.8.1  # Added for sentence tokenization
 psutil==5.9.0  # For memory monitoring
 pytest==8.2.0  # For testing
 pytest-mock==3.12.0  # For mocking in tests
