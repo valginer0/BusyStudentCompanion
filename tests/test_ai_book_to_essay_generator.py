@@ -187,6 +187,67 @@ def test_process_txt_file_success(mocker, temp_cache_dir):
     assert generator.sources[0]['name'] == "test_book.txt"
     assert generator.sources[0]['type'] == 'txt'
 
+def test_load_pdf_file_success(mocker, temp_cache_dir):
+    """Test successful processing of a PDF file via load_pdf_file, mocking fitz."""
+    generator = AIBookEssayGenerator()
+    generator.cache_manager.cache_dir = Path(temp_cache_dir)
+    sample_pdf_text = "This is text from a PDF page."
+    num_pages = 2
+
+    # Create dummy test file path (doesn't need to exist as fitz is mocked)
+    file_path = os.path.join(temp_cache_dir, "test_book.pdf")
+    # Touch the file so os.path.exists passes in _process_file_content
+    Path(file_path).touch()
+
+    # Mock dependencies: cache, model, and fitz (PyMuPDF)
+    mock_get_cache = mocker.patch.object(generator.cache_manager, 'get_cached_content', return_value=None)
+    mock_cache_content = mocker.patch.object(generator.cache_manager, 'cache_content')
+    mock_handler_instance = MagicMock()
+    mock_handler_instance.process_text = MagicMock()
+    mocker.patch.object(AIBookEssayGenerator, 'model', new_callable=mocker.PropertyMock, return_value=mock_handler_instance)
+
+    # --- Mock fitz (PyMuPDF) --- 
+    mock_pdf_page = MagicMock()
+    mock_pdf_page.get_text.return_value = sample_pdf_text
+    
+    mock_pdf_doc = MagicMock()
+    mock_pdf_doc.load_page.return_value = mock_pdf_page
+    # Configure __len__ for the loop range(len(pdf_document))
+    mock_pdf_doc.__len__.return_value = num_pages 
+    
+    mock_fitz_open = mocker.patch('src.book_to_essay.ai_book_to_essay_generator.fitz.open', return_value=mock_pdf_doc)
+    # ---------------------------
+
+    # Call the public loading method
+    generator.load_pdf_file(file_path)
+
+    # Assertions
+    mock_get_cache.assert_called_once_with(file_path)
+    mock_fitz_open.assert_called_once_with(file_path)
+    assert mock_pdf_doc.load_page.call_count == num_pages
+    assert mock_pdf_page.get_text.call_count == num_pages
+    mock_pdf_doc.close.assert_called_once()
+
+    # Assert model processing was called with concatenated text (+ newline per page)
+    expected_content = (sample_pdf_text + '\n') * num_pages
+    mock_handler_instance.process_text.assert_called_once_with(expected_content)
+    
+    # Assert cache was updated
+    mock_cache_content.assert_called_once()
+    call_args = mock_cache_content.call_args[0]
+    assert call_args[0] == file_path
+    cached_data = call_args[1]
+    assert cached_data['content'] == expected_content # Content saved is NOT stripped
+    assert cached_data['source']['path'] == file_path
+    assert cached_data['source']['name'] == "test_book.pdf"
+    assert cached_data['source']['type'] == 'pdf'
+
+    # Assert generator state was updated (content has extra newline added by _process_file_content)
+    assert generator.content.strip() == expected_content.strip()
+    assert len(generator.sources) == 1
+    assert generator.sources[0]['path'] == file_path
+    assert generator.sources[0]['name'] == "test_book.pdf"
+    assert generator.sources[0]['type'] == 'pdf'
 
 # === Additional Tests ===
 
