@@ -4,8 +4,10 @@ from pathlib import Path
 from unittest.mock import MagicMock, Mock
 
 import pytest
-from pytest_mock import MockerFixture
 import ebooklib
+import fitz  # PyMuPDF
+import re
+from pytest_mock import MockerFixture
 
 from src.book_to_essay.ai_book_to_essay_generator import AIBookEssayGenerator
 
@@ -435,6 +437,31 @@ def test_load_file_cache_hit(mocker, tmp_path):
     mock_cache_content.assert_not_called() # Should not be called again
     # Content should now be duplicated because it's loaded twice
     assert generator.content == (file_content + "\n") + (file_content + "\n")
+
+
+def test_generate_essay_invalid_word_limit(mocker, temp_cache_dir):
+    """Test that generate_essay handles ValueError from model (e.g., low word limit)."""
+    generator = AIBookEssayGenerator()
+    # Load some dummy content to satisfy the prerequisite
+    generator.content = "Some initial content."
+    
+    # Mock the model's generate_essay to raise a ValueError
+    mock_model_generate = mocker.patch.object(
+        generator.model, 
+        'generate_essay', 
+        side_effect=ValueError("Simulated error: Word limit too low")
+    )
+    
+    # The expected error message from the generator's except block
+    expected_error_msg_pattern = r"Error generating essay: Simulated error: Word limit too low"
+    
+    with pytest.raises(ValueError, match=expected_error_msg_pattern):
+        # Call generate_essay - the actual word_limit value doesn't matter here
+        # as the mock will raise the error regardless.
+        generator.generate_essay(prompt="Test prompt", word_limit=10)
+        
+    # Verify the mocked model method was called
+    mock_model_generate.assert_called_once()
 
 
 def test_generate_essay_model_error(mocker, temp_cache_dir):
