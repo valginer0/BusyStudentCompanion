@@ -388,6 +388,55 @@ def test_load_file_processing_error(mocker, tmp_path, load_method_name, mock_tar
         # Check that the PDF/EPUB processor function was called
         mocked_processor_call_check.assert_called_once_with(str(file_path))
 
+def test_load_file_cache_hit(mocker, tmp_path):
+    """Test that loading the same file twice results in a cache hit on the second call."""
+    generator = AIBookEssayGenerator()
+    file_path = tmp_path / "cache_test.txt"
+    file_content = "This is the content to be cached."
+    file_path.write_text(file_content, encoding='utf-8')
+
+    # Mock CacheManager methods
+    mock_get_cache = mocker.patch.object(generator.cache_manager, 'get_cached_content', return_value=None)
+    mock_cache_content = mocker.patch.object(generator.cache_manager, 'cache_content')
+    
+    # Mock the actual processing function just to ensure it's called only once
+    # We need to mock the nested function within load_txt_file
+    # Note: This requires accessing the inner function definition, which is tricky.
+    # Instead, let's verify behavior via cache mock calls.
+    # We expect process_txt -> cache_content on first call.
+    # We expect get_cached_content -> no process_txt -> no cache_content on second call.
+
+    # --- First call (Cache Miss) ---
+    generator.load_txt_file(str(file_path))
+    
+    # Assertions for first call
+    mock_get_cache.assert_called_once_with(str(file_path))
+    # process_txt should have run and triggered cache_content with the correct structure
+    expected_cached_data = {
+        "content": file_content,
+        "source": {"path": str(file_path), "name": "cache_test.txt", "type": "txt"}
+    }
+    mock_cache_content.assert_called_once_with(str(file_path), expected_cached_data)
+    assert generator.content == file_content + "\n" # Content includes added newline
+    
+    # --- Prepare for Second Call (Cache Hit) ---
+    # Reset relevant mocks and configure get_cache to return data
+    mock_get_cache.reset_mock()
+    mock_cache_content.reset_mock()
+    # Use the same structure for the cached data returned by get_cache
+    cached_data = expected_cached_data 
+    mock_get_cache.return_value = cached_data
+    
+    # --- Second call (Cache Hit) ---
+    generator.load_txt_file(str(file_path))
+    
+    # Assertions for second call
+    mock_get_cache.assert_called_once_with(str(file_path)) # Called again
+    mock_cache_content.assert_not_called() # Should not be called again
+    # Content should now be duplicated because it's loaded twice
+    assert generator.content == (file_content + "\n") + (file_content + "\n")
+
+
 def test_generate_essay_model_error(mocker, temp_cache_dir):
     """Test handling of errors raised by the model during essay generation."""
     generator = AIBookEssayGenerator()
