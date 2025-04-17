@@ -44,3 +44,41 @@ def filter_analysis(analysis: str) -> str:
             continue
         filtered.append(line)
     return '\n'.join(filtered)
+
+def prepare_citations(sources):
+    """
+    Prepare MLA citations and citation text from a list of sources.
+    Args:
+        sources: List of dicts with citation info (author, title, year, etc.)
+    Returns:
+        Tuple (mla_citations: List[str] or None, citations_text: str)
+    """
+    if not sources:
+        return None, ""
+    mla_citations = []
+    for source in sources:
+        author = source.get("author", "Unknown Author")
+        title = source.get("title", "Unknown Title")
+        year = source.get("year", "n.d.")
+        publisher = source.get("publisher", "")
+        citation = f"{author}. {title}. {publisher}, {year}."
+        mla_citations.append(citation)
+    citations_text = "\n".join(mla_citations)
+    return mla_citations, citations_text
+
+def format_essay_from_analyses(analyses, citations_text, word_limit, style):
+    """
+    Format the essay body from analyses and citations.
+    Args:
+        analyses: List of analysis strings
+        citations_text: Works Cited string
+        word_limit: Target word count
+        style: Essay style
+    Returns:
+        Formatted essay string
+    """
+    essay_body = "\n\n".join(analyses)
+    essay = essay_body
+    if citations_text and "Works Cited" not in essay:
+        essay += f"\n\nWorks Cited:\n{citations_text}"
+    return essay

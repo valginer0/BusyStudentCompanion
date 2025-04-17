@@ -12,7 +12,8 @@ import nltk # Added for sentence tokenization
 import re
 from .chunk_analysis_manager import ChunkAnalysisManager
 from typing import Optional, List, Dict
-from .utils import truncate_text, filter_analysis
+from .utils import truncate_text, filter_analysis, prepare_citations, format_essay_from_analyses
+from .utils import truncate_text, filter_analysis, prepare_citations, format_essay_from_analyses
 
 logger = logging.getLogger(__name__)
 
@@ -120,21 +121,7 @@ class DeepSeekHandler:
         return essay
 
     def _prepare_citations(self, sources):
-        mla_citations = None
-        citations_text = ""
-        if sources:
-            mla_citations = []
-            for source in sources:
-                if 'author' in source and 'title' in source:
-                    mla_citation = f"{source['author']}. {source['title']} ."
-                    if 'publisher' in source:
-                        mla_citation += f" {source['publisher']},"
-                    if 'year' in source:
-                        mla_citation += f" {source['year']}."
-                    mla_citations.append(mla_citation)
-            if mla_citations:
-                citations_text = "\n".join(mla_citations)
-        return mla_citations, citations_text
+        return prepare_citations(sources)
 
     def _collect_chunk_analyses(self, topic, style, word_limit):
         analyses = []
@@ -145,10 +132,7 @@ class DeepSeekHandler:
         return analyses
 
     def _format_essay_from_analyses(self, analyses, citations_text, word_limit, style):
-        essay_body = "\n\n".join(analyses)
-        if citations_text:
-            essay_body += f"\n\nWorks Cited:\n{citations_text}"
-        return essay_body
+        return format_essay_from_analyses(analyses, citations_text, word_limit, style)
 
     def _postprocess_essay(self, essay, word_limit):
         # Truncate if necessary
