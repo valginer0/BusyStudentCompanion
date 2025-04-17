@@ -8,6 +8,7 @@ import re
 from typing import List, Optional, Dict, Any
 from src.book_to_essay.model_handler import DeepSeekHandler
 from src.book_to_essay.cache_manager import CacheManager
+from src.book_to_essay.validation import validate_word_count, validate_file_extension, validate_style, validate_filename_for_citation
 import logging
 from src.book_to_essay.essay_utilities import get_essay_cache_key
 
@@ -38,6 +39,10 @@ class AIBookEssayGenerator:
         """Process file content with caching."""
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
+
+        # Validate file extension and citation filename
+        validate_file_extension(file_path)
+        validate_filename_for_citation(file_path)
             
         # Check cache first
         cached_content = self.cache_manager.get_cached_content(file_path)
@@ -148,6 +153,10 @@ class AIBookEssayGenerator:
         Returns:
             A formatted essay with MLA citations
         """
+        # Validate inputs
+        validate_word_count(word_limit)
+        validate_style(style)
+        
         # Ensure we have content to process
         if not self.content:
             raise ValueError("No content has been loaded. Please load at least one file first.")
