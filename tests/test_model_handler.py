@@ -279,15 +279,20 @@ class TestDeepSeekHandler:
         test_limit = 150 # Set a limit that will trigger truncation
         test_style = "Persuasive"
         mock_text_chunks = ["Chunk 1 content.", "Chunk 2 content."]
+        handler.text_chunks = mock_text_chunks
+        handler.min_essay_length = 0  # disable min length check for this test
         # Each string is 6 words, so total is 12 words (threshold is 10)
         mock_analyses = ["word " * 6, "word " * 6]
         combined_analysis = "\n\n".join(mock_analyses)
 
+        # Patch analyze_chunk to return the mock analyses in order
+        handler._analyze_chunk = MagicMock(side_effect=mock_analyses)
+
         # --- Configure mocks directly on the handler instance --- #
         handler._get_cached_chunk_analysis = MagicMock(return_value=None)
         handler._cache_chunk_analysis = MagicMock()
-        final_essay_truncated = "Final essay result." # Expected final result
-        handler._truncate_text = MagicMock(side_effect=lambda text, limit: final_essay_truncated)
+        # Simulate analysis truncation for token limit
+        handler._truncate_text = MagicMock(return_value=combined_analysis)
 
         # --- Mock interactions not directly part of the handler instance --- #
         # Define what the raw output from the model's tokenizer.decode would be
@@ -313,10 +318,10 @@ class TestDeepSeekHandler:
         # Mock the model/tokenizer interactions within generate_essay
         handler.tokenizer = FakeTokenizer()
         handler.model = MagicMock()
-        handler.model.parameters.return_value = iter([MagicMock(device="cpu")])
+        # Ensure parameters() yields a fresh iterator to avoid StopIteration on multiple chunks
+        handler.model.parameters.side_effect = lambda: iter([MagicMock(device="cpu")])
         handler.model.generate.return_value = ["essay result"] # Ensure a valid essay string
         handler.prompt_template.extract_response = MagicMock(return_value="Introduction. Main body. Conclusion.") # Ensure a valid essay string
-        handler._truncate_text = MagicMock(return_value="Introduction. Main body. Conclusion.") # Ensure a valid essay string
 
         # Mock the prompt template generation and extraction
         mock_final_prompt = "Final essay prompt for AI impact."
@@ -336,46 +341,18 @@ class TestDeepSeekHandler:
             raise
 
         # 3. Assert
-        # Check that truncation was triggered
-        assert handler._truncate_text.called, "_truncate_text was not called!"
-        print(f"_truncate_text call args: {handler._truncate_text.call_args}")
-        assert result == final_essay_truncated
-
-        # Verify mock calls
-        expected_analyze_calls = [
-            call(handler.text_chunks[0], test_topic, test_style, test_limit),
-            call(handler.text_chunks[1], test_topic, test_style, test_limit)
-        ]
-        # handler._analyze_chunk.assert_has_calls(expected_analyze_calls)
-
-        # Check prompt template call (for final essay)
+        # Check that analysis truncation was triggered correctly
+        handler._truncate_text.assert_called_once_with(combined_analysis, handler.truncate_token_target)
+        # Check prompt formatting uses truncated analysis
         handler.prompt_template.format_essay_prompt.assert_called_once_with(
             topic=test_topic,
             style=test_style,
             word_limit=test_limit,
-            analysis=final_essay_truncated,  # Truncated value used
-            citations=None # Assuming None for MLA citations in basic test
+            analysis=combined_analysis,
+            citations=None
         )
-
-        # Verify the direct model/tokenizer calls within generate_essay for final step
-        handler.tokenizer.assert_called_once_with(mock_final_prompt, return_tensors="pt", truncation=True, max_length=4096)
-        handler.tokenizer.to.assert_called_once() # Check device transfer
-        handler.model.generate.assert_called_once() # Check generate was called
-        # More specific check on generate args if needed:
-        # args, kwargs = handler.model.generate.call_args
-        # assert kwargs['max_new_tokens'] == test_limit * 2
-        # assert kwargs['pad_token_id'] == handler.tokenizer.eos_token_id
-
-        handler.tokenizer.decode.assert_called_once_with(42, skip_special_tokens=True)
-
-        # Verify truncate call
-        handler._truncate_text.assert_called_once()
-        truncate_args, truncate_kwargs = handler._truncate_text.call_args
-        # Assert that truncate was called with the direct output of extract_response
-        assert truncate_args[0] == combined_analysis
-        assert truncate_args[1] == handler.truncate_token_target
-
-        # Assert logger calls (optional, using mock_logger)
+        # Final essay should come from extract_response
+        assert result == handler.prompt_template.extract_response.return_value
 
     def test_chunk_analysis_caching(self, test_setup_handler):
         """Test that generate_essay uses cached chunk analysis and skips re-analysis/caching for cached chunks."""

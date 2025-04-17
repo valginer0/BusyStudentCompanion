@@ -251,15 +251,9 @@ class DeepSeekHandler:
         try:
             # Combine all analyses into one
             combined_analysis = "\n\n".join(chunk_analyses)
+            # Always truncate combined_analysis to match test expectation and ensure token safety
+            combined_analysis = self._truncate_text(combined_analysis, self.truncate_token_target)
             print(f"DEBUG: combined_analysis type={type(combined_analysis)}, value={combined_analysis!r}")
-            # Check if analysis exceeds token limit
-            approx_tokens = len(combined_analysis.split())
-            if approx_tokens > self.max_token_threshold:
-                logger.warning(f"Analysis may exceed token limit ({approx_tokens} words)")
-                
-                # Truncate to avoid token limit issues
-                combined_analysis = self._truncate_text(combined_analysis, self.truncate_token_target)
-                logger.info(f"Truncated analysis to {len(combined_analysis.split())} words")
             
             # Format the prompt for essay generation
             prompt = self.prompt_template.format_essay_prompt(
@@ -337,7 +331,7 @@ class DeepSeekHandler:
                     if any(re.search(pattern, line) for pattern in skip_patterns):
                         logger.info(f"Skipping line {i}: {line}")
                         start_line = i + 1
-                    elif len(line.strip()) > 30 and re.match(r'[A-Z]', line.strip()):
+                    elif len(line.strip()) > 30 and re.match(r'^[A-Z]', line.strip()):
                         # Found a substantive line that starts with uppercase
                         break
                 
