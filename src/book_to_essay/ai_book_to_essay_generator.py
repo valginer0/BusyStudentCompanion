@@ -9,6 +9,7 @@ from typing import List, Optional, Dict, Any
 from src.book_to_essay.model_handler import DeepSeekHandler
 from src.book_to_essay.cache_manager import CacheManager
 import logging
+from src.book_to_essay.essay_utilities import get_essay_cache_key
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +153,7 @@ class AIBookEssayGenerator:
             raise ValueError("No content has been loaded. Please load at least one file first.")
             
         # Check cache for existing essay with these parameters
-        cache_key = f"{prompt}_{word_limit}_{style}_{','.join([s['name'] for s in self.sources])}"
+        cache_key = get_essay_cache_key(prompt, word_limit, style, self.sources)
         cached_essay = self.cache_manager.get_cached_model_output(cache_key, self.content)
         if cached_essay is not None:
             return cached_essay
