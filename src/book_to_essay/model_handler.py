@@ -12,7 +12,7 @@ import nltk # Added for sentence tokenization
 import re
 from .chunk_analysis_manager import ChunkAnalysisManager
 from typing import Optional, List, Dict
-from .utils import truncate_text, filter_analysis, prepare_citations, format_essay_from_analyses
+from .utils import truncate_text, filter_analysis, prepare_citations, format_essay_from_analyses, postprocess_essay
 from .utils import truncate_text, filter_analysis, prepare_citations, format_essay_from_analyses
 
 logger = logging.getLogger(__name__)
@@ -135,22 +135,7 @@ class DeepSeekHandler:
         return format_essay_from_analyses(analyses, citations_text, word_limit, style)
 
     def _postprocess_essay(self, essay, word_limit):
-        # Truncate if necessary
-        if len(essay.split()) > word_limit:
-            essay = truncate_text(essay, word_limit)
-        # Structure paragraphs (basic)
-        paragraphs = essay.split('\n\n')
-        reconstructed = []
-        current = []
-        for para in paragraphs:
-            if para.strip():
-                current.append(para.strip())
-                if len(' '.join(current).split()) > 120:
-                    reconstructed.append(' '.join(current))
-                    current = []
-        if current:
-            reconstructed.append(' '.join(current))
-        return '\n\n'.join(reconstructed)
+        return postprocess_essay(essay, word_limit)
 
     def _generate_fallback_essay(self, topic: str, style: str, word_limit: int, reason: FallbackReason = FallbackReason.UNKNOWN) -> str:
         """Generate a fallback essay when the main generation process fails."""

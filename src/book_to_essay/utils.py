@@ -82,3 +82,22 @@ def format_essay_from_analyses(analyses, citations_text, word_limit, style):
     if citations_text and "Works Cited" not in essay:
         essay += f"\n\nWorks Cited:\n{citations_text}"
     return essay
+
+def postprocess_essay(essay: str, word_limit: int) -> str:
+    """
+    Truncate essay to word_limit and structure into paragraphs of ~120 words.
+    """
+    if len(essay.split()) > word_limit:
+        essay = truncate_text(essay, word_limit)
+    paragraphs = essay.split('\n\n')
+    reconstructed = []
+    current = []
+    for para in paragraphs:
+        if para.strip():
+            current.append(para.strip())
+            if len(' '.join(current).split()) > 120:
+                reconstructed.append(' '.join(current))
+                current = []
+    if current:
+        reconstructed.append(' '.join(current))
+    return '\n\n'.join(reconstructed)
