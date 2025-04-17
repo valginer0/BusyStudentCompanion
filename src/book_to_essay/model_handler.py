@@ -22,14 +22,21 @@ logger = logging.getLogger(__name__)
 class DeepSeekHandler:
     """Handler for the language model."""
     
-    def __init__(self, model=None, tokenizer=None, prompt_template=None):
+    def __init__(self, model=None, tokenizer=None, prompt_template=None, max_token_threshold=4000, truncate_token_target=3500, min_essay_length=100):
         """Initialize the model and tokenizer with appropriate quantization.
         
         Args:
             model: Optional pre-loaded model to reuse
             tokenizer: Optional pre-loaded tokenizer to reuse
             prompt_template: Optional pre-loaded prompt template to reuse
+            max_token_threshold: Max tokens before truncation is triggered
+            truncate_token_target: Target tokens after truncation
+            min_essay_length: Minimum length in characters for a valid essay
         """
+        self.max_token_threshold = max_token_threshold
+        self.truncate_token_target = truncate_token_target
+        self.min_essay_length = min_essay_length
+        
         try:
             # Initialize chunk cache directory regardless of model reuse
             self.chunk_cache_dir = Path(os.path.join(MODEL_CACHE_DIR, "chunk_cache"))
@@ -189,130 +196,109 @@ class DeepSeekHandler:
         """
         logger.info(f"Generating essay on topic: {topic} with {word_limit} word limit in {style} style")
         
+        # Validate text chunks exist
+        if not hasattr(self, 'text_chunks') or not self.text_chunks:
+            logger.error("No text has been loaded. Please load text first.")
+            raise RuntimeError("No text has been loaded. Please load text first.")
+        
+        # If source not provided, try to extract from book data
+        if sources is None and hasattr(self, 'book_data'):
+            sources = [self.book_data]
+        
+        # Prepare MLA citations
+        mla_citations = None
+        citations_text = ""
+        if sources:
+            mla_citations = []
+            for source in sources:
+                if 'author' in source and 'title' in source:
+                    mla_citation = f"{source['author']}. {source['title']} ."
+                    if 'publisher' in source:
+                        mla_citation += f" {source['publisher']},"
+                    if 'year' in source:
+                        mla_citation += f" {source['year']}."
+                    mla_citations.append(mla_citation)
+            
+            if mla_citations:
+                citations_text = "Works Cited\n\n" + "\n".join(mla_citations)
+        
+        # Process the chunks
+        chunk_analyses = []
+        logger.info(f"Processing {len(self.text_chunks)} text chunks for analysis")
+        
+        if not self.text_chunks or all(not chunk.strip() for chunk in self.text_chunks):
+            logger.error("All text chunks are empty or whitespace")
+            raise RuntimeError("All text chunks are empty or whitespace")
+        
+        # Analyze each chunk
+        for chunk in self.text_chunks:
+            analysis = self._analyze_chunk(chunk, topic, style, word_limit)
+            print(f"DEBUG: analysis for chunk='{chunk[:30]}': {analysis!r}")
+            chunk_analyses.append(analysis)
+        print(f"DEBUG: chunk_analyses after loop: {chunk_analyses!r}")
+        # Additional debug: check if any analysis is None or not a string
+        for idx, a in enumerate(chunk_analyses):
+            print(f"DEBUG: chunk_analyses[{idx}] type={type(a)}, value={a!r}")
+        
+        # If no analyses were produced, raise an error
+        if not chunk_analyses:
+            logger.error("No chunk analyses were produced")
+            raise RuntimeError("No chunk analyses were produced")
+        
+        logger.info(f"Successfully analyzed {len(chunk_analyses)} chunks")
+        
+        # Generate the essay using the analyses
         try:
-            # Validate text chunks exist
-            if not hasattr(self, 'text_chunks') or not self.text_chunks:
-                logger.error("No text has been loaded. Please load text first.")
-                raise RuntimeError("No text has been loaded. Please load text first.")
+            # Combine all analyses into one
+            combined_analysis = "\n\n".join(chunk_analyses)
+            print(f"DEBUG: combined_analysis type={type(combined_analysis)}, value={combined_analysis!r}")
+            # Check if analysis exceeds token limit
+            approx_tokens = len(combined_analysis.split())
+            if approx_tokens > self.max_token_threshold:
+                logger.warning(f"Analysis may exceed token limit ({approx_tokens} words)")
+                
+                # Truncate to avoid token limit issues
+                combined_analysis = self._truncate_text(combined_analysis, self.truncate_token_target)
+                logger.info(f"Truncated analysis to {len(combined_analysis.split())} words")
             
-            # If source not provided, try to extract from book data
-            if sources is None and hasattr(self, 'book_data'):
-                sources = [self.book_data]
+            # Format the prompt for essay generation
+            prompt = self.prompt_template.format_essay_prompt(
+                topic=topic,
+                style=style,
+                word_limit=word_limit,
+                analysis=combined_analysis,
+                citations=mla_citations
+            )
+            print(f"DEBUG: essay_prompt: {prompt!r}")
             
-            # Prepare MLA citations
-            mla_citations = None
-            citations_text = ""
-            if sources:
-                mla_citations = []
-                for source in sources:
-                    if 'author' in source and 'title' in source:
-                        mla_citation = f"{source['author']}. {source['title']}."
-                        if 'publisher' in source:
-                            mla_citation += f" {source['publisher']},"
-                        if 'year' in source:
-                            mla_citation += f" {source['year']}."
-                        mla_citations.append(mla_citation)
-                
-                if mla_citations:
-                    citations_text = "Works Cited\n\n" + "\n".join(mla_citations)
+            # Do the generation
+            device = next(self.model.parameters()).device
+            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=4096).to(device)
+            print(f"DEBUG: inputs type={type(inputs)}, value={inputs}")
             
-            # Process the chunks
-            try:
-                chunk_analyses = []
-                
-                # Log chunk processing start
-                logger.info(f"Processing {len(self.text_chunks)} text chunks for analysis")
-                
-                if not self.text_chunks or all(not chunk.strip() for chunk in self.text_chunks):
-                    logger.error("All text chunks are empty or whitespace")
-                    raise RuntimeError("All text chunks are empty or whitespace")
-                
-                # Analyze each chunk
-                for i, chunk in enumerate(self.text_chunks):
-                    if not chunk.strip():
-                        logger.warning(f"Skipping empty chunk {i}")
-                        continue
-                    
-                    try:
-                        logger.info(f"Analyzing chunk {i+1}/{len(self.text_chunks)} - length: {len(chunk)}")
-                        # Print sample of chunk for debugging
-                        logger.debug(f"Chunk {i+1} starts with: {chunk[:50]}...")
-                        
-                        # Analyze the chunk using the prompt template
-                        analysis = self._analyze_chunk(chunk, topic, style, word_limit)
-                        
-                        # Add the analysis to our list if non-empty
-                        if analysis and analysis.strip():
-                            chunk_analyses.append(analysis)
-                        else:
-                            logger.warning(f"Chunk {i+1} analysis was empty")
-                    except Exception as e:
-                        logger.error(f"Error analyzing chunk {i+1}: {str(e)}")
-                        # Continue with other chunks
-                
-                # If no analyses were produced, raise an error
-                if not chunk_analyses:
-                    logger.error("No chunk analyses were produced")
-                    raise RuntimeError("No chunk analyses were produced")
-                
-                logger.info(f"Successfully analyzed {len(chunk_analyses)} chunks")
-                
-                # Generate the essay using the analyses
-                try:
-                    # Combine all analyses into one
-                    combined_analysis = "\n\n".join(chunk_analyses)
-                    
-                    # Check if analysis exceeds token limit
-                    approx_tokens = len(combined_analysis.split())
-                    if approx_tokens > 4000:  # Conservative estimate
-                        logger.warning(f"Analysis may exceed token limit ({approx_tokens} words)")
-                        
-                        # Truncate to avoid token limit issues
-                        combined_analysis = self._truncate_text(combined_analysis, 3500)
-                        logger.info(f"Truncated analysis to {len(combined_analysis.split())} words")
-                    
-                    # Format the prompt for essay generation
-                    prompt = self.prompt_template.format_essay_prompt(
-                        topic=topic,
-                        style=style,
-                        word_limit=word_limit,
-                        analysis=combined_analysis,
-                        citations=mla_citations
-                    )
-                    
-                    # Do the generation
-                    device = next(self.model.parameters()).device
-                    inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=4096).to(device)
-                    
-                    logger.info("Generating full essay from analysis")
-                    
-                    with torch.no_grad():
-                        outputs = self.model.generate(
-                            **inputs,
-                            max_new_tokens=min(2048, word_limit * 3),  # Limit based on word count
-                            temperature=TEMPERATURE,
-                            do_sample=True
-                        )
-                    
-                    # Decode the model output
-                    response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-                    
-                    # Try to extract just the essay part
-                    essay = self.prompt_template.extract_response(response)
-                    
-                    logger.info(f"Generated essay with length: {len(essay)}")
-                except Exception as e:
-                    logger.error(f"Error generating essay from analyses: {str(e)}")
-                    raise RuntimeError(f"Essay generation failed due to an internal error: {str(e)}")
+            logger.info("Generating full essay from analysis")
             
-            except Exception as e:
-                logger.error(f"Error during chunk analysis: {str(e)}")
-                raise RuntimeError(f"Chunk analysis failed due to an internal error: {str(e)}")
+            with torch.no_grad():
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens=min(2048, word_limit * 3),  # Limit based on word count
+                    temperature=TEMPERATURE,
+                    do_sample=True
+                )
+            print(f"DEBUG: essay_output: {outputs!r}")
+            
+            # Decode the model output
+            response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+            print(f"DEBUG: essay after decode: {response!r}")
+            
+            # Try to extract just the essay part
+            essay = self.prompt_template.extract_response(response)
+            print(f"DEBUG: essay after extract_response: {essay!r}")
             
             # Post-process the essay
             try:
                 logger.info("Filtering and cleaning essay")
-                
+                print(f"DEBUG: essay before filtering: {essay!r}")
                 # Define patterns to skip (instructions, etc.)
                 skip_patterns = [
                     r"(?i)essay:", r"(?i)essay on", 
@@ -359,12 +345,12 @@ class DeepSeekHandler:
                 if start_line > 0 and start_line < len(lines):
                     essay = '\n'.join(lines[start_line:])
                 
-                if not essay or len(essay.strip()) < 100:
+                if not essay or len(essay.strip()) < self.min_essay_length:
                     logger.warning("Essay too short after filtering, raising error.")
                     raise RuntimeError(f"Essay generation failed due to insufficient content: {len(essay)} characters")
                 
                 # Verify essay has proper structure
-                if essay and len(essay.strip()) >= 100:
+                if essay and len(essay.strip()) >= self.min_essay_length:
                     # Check if it has at least 3 paragraphs
                     paragraphs = re.split(r'\n\s*\n', essay)
                     if len(paragraphs) < 3:
@@ -392,9 +378,10 @@ class DeepSeekHandler:
                                 logger.info("Reconstructed essay into structured paragraphs")
                 
                 logger.info(f"After comprehensive filtering, essay starts with: {essay[:100] if essay else 'EMPTY'}...")
-                
+                print(f"DEBUG: essay before return: {essay!r}")
             except Exception as e:
                 logger.error(f"Error during essay filtering: {str(e)}")
+                print(f"DEBUG: Exception during essay filtering: {e}")
                 raise RuntimeError(f"Essay filtering failed due to an internal error: {str(e)}")
             
             # Print the filtered essay for debugging
@@ -405,10 +392,12 @@ class DeepSeekHandler:
             # Add Works Cited if not already included
             if "Works Cited" not in essay and mla_citations:
                 essay += f"\n\n{citations_text}"
-                
+                print(f"DEBUG: essay before final return: {essay!r}")
             return essay
         except Exception as e:
             logger.error(f"Error generating final essay: {str(e)}")
+            print(f"DEBUG: Exception generating final essay: {e}")
+            print(f"DEBUG: essay at exception: {locals().get('essay', 'NOT SET')!r}")
             raise
 
     def _generate_fallback_essay(self, topic: str, style: str, word_limit: int, reason: FallbackReason = FallbackReason.UNKNOWN) -> str:
@@ -477,75 +466,50 @@ This analysis of {topic} as a literary device demonstrates the inseparability of
 
     def _analyze_chunk(self, chunk: str, topic: str, style: str, word_limit: int) -> str:
         """Analyze a text chunk for relevance to the topic."""
-        logger.info(f"Analyzing chunk of {len(chunk)} characters for topic: {topic}")
-        
-        try:
-            # Check if we have a cached analysis for this chunk
-            cached_analysis = self._get_cached_chunk_analysis(chunk, topic, style, word_limit)
-            if cached_analysis:
-                logger.info("Using cached chunk analysis")
-                return cached_analysis
-            
-            # Format the prompt using the template
-            prompt = self.prompt_template.format_chunk_analysis_prompt(
-                chunk=chunk,
-                topic=topic
+        # Check cache
+        cached = self._get_cached_chunk_analysis(chunk, topic, style, word_limit)
+        if cached:
+            return cached
+        # Perform analysis and cache
+        analysis = self._perform_chunk_analysis(chunk, topic, style, word_limit)
+        self._cache_chunk_analysis(chunk, topic, style, word_limit, analysis)
+        return analysis
+
+    # Helpers for chunk analysis, extracted to simplify _analyze_chunk
+    def _perform_chunk_analysis(self, chunk: str, topic: str, style: str, word_limit: int) -> str:
+        """Generate analysis for a chunk (without cache)."""
+        prompt = self.prompt_template.format_chunk_analysis_prompt(chunk=chunk, topic=topic)
+        device = next(self.model.parameters()).device
+        inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=4096).to(device)
+        with torch.no_grad():
+            response = self.model.generate(
+                **inputs,
+                max_new_tokens=500,
+                temperature=TEMPERATURE,
+                do_sample=True
             )
-            
-            # Tokenize and prepare inputs
-            device = next(self.model.parameters()).device
-            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=4096).to(device)
-            
-            # Generate the analysis
-            with torch.no_grad():
-                response = self.model.generate(
-                    **inputs,
-                    max_new_tokens=500,
-                    temperature=TEMPERATURE,
-                    do_sample=True
-                )
-            
-            # Decode and extract the response
-            analysis = self.tokenizer.decode(response[0], skip_special_tokens=True)
-            analysis = self.prompt_template.extract_response(analysis)
-            
-            # Filter out instruction text
-            instruction_keywords = [
-                "INSTRUCTIONS:", "Extract key", "Identify character", "Note literary", 
-                "Focus ONLY", "Format your", "Source Materials:", "TEXT EXCERPT:",
-                "social media", "data analysis",
-                "YOUR ANALYSIS", "do not repeat these instructions", "do not include these instructions",
-                "start directly with", "ESSAY", "do not"
-            ]
-            
-            # Split into lines and filter out instruction lines
-            analysis_lines = analysis.split('\n')
-            filtered_lines = []
-            
-            for line in analysis_lines:
-                should_skip = False
-                for keyword in instruction_keywords:
-                    if keyword.lower() in line.lower():
-                        should_skip = True
-                        break
-                
-                # Skip numbered list items that look like instructions
-                if re.match(r'^\d+\.\s+(Extract|Identify|Note|Focus|Format)', line.strip()):
-                    should_skip = True
-                
-                if not should_skip:
-                    filtered_lines.append(line)
-            
-            analysis = '\n'.join(filtered_lines)
-            
-            # Cache the analysis
-            self._cache_chunk_analysis(chunk, topic, style, word_limit, analysis)
-            
-            return analysis
-            
-        except Exception as e:
-            logger.error(f"Error analyzing chunk: {str(e)}")
-            return ""
+        analysis = self.tokenizer.decode(response[0], skip_special_tokens=True)
+        analysis = self.prompt_template.extract_response(analysis)
+        return self._filter_analysis(analysis)
+
+    def _filter_analysis(self, analysis: str) -> str:
+        """Remove instruction lines from chunk analysis."""
+        instruction_keywords = [
+            "INSTRUCTIONS:", "Extract key", "Identify character", "Note literary",
+            "Focus ONLY", "Format your", "Source Materials:", "TEXT EXCERPT:",
+            "social media", "data analysis", "YOUR ANALYSIS",
+            "do not repeat these instructions", "do not include these instructions",
+            "start directly with", "ESSAY", "do not"
+        ]
+        lines = analysis.split('\n')
+        filtered = []
+        for line in lines:
+            if any(keyword.lower() in line.lower() for keyword in instruction_keywords):
+                continue
+            if re.match(r'^\d+\.\s+(Extract|Identify|Note|Focus|Format)', line.strip()):
+                continue
+            filtered.append(line)
+        return '\n'.join(filtered)
 
     def _get_chunk_cache_key(self, chunk: str, topic: str, style: str, word_limit: int) -> str:
         """Generate a unique cache key for a chunk analysis."""
