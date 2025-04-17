@@ -16,6 +16,7 @@ from .config import (
 from .prompts.factory import PromptTemplateFactory
 from .fallback import FallbackReason
 import nltk # Added for sentence tokenization
+from .chunk_analysis_manager import ChunkAnalysisManager
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,8 @@ class DeepSeekHandler:
         prompt_template: Optional[object] = None,
         max_token_threshold: int = 4000,
         truncate_token_target: int = 3500,
-        min_essay_length: int = 100
+        min_essay_length: int = 100,
+        chunk_manager: Optional[ChunkAnalysisManager] = None
     ) -> None:
         """
         Initialize the model handler with model, tokenizer, and prompt template.
@@ -40,6 +42,7 @@ class DeepSeekHandler:
             max_token_threshold: Max tokens before truncation is triggered.
             truncate_token_target: Target tokens after truncation.
             min_essay_length: Minimum length in characters for a valid essay.
+            chunk_manager: Optional ChunkAnalysisManager instance to reuse.
         Raises:
             RuntimeError: If model or tokenizer fails to initialize.
         """
@@ -48,10 +51,8 @@ class DeepSeekHandler:
         self.min_essay_length = min_essay_length
         
         try:
-            # Initialize chunk cache directory regardless of model reuse
-            self.chunk_cache_dir = Path(os.path.join(MODEL_CACHE_DIR, "chunk_cache"))
-            self.chunk_cache_dir.mkdir(parents=True, exist_ok=True)
-            
+            # Initialize chunk analysis manager
+            self.chunk_manager = chunk_manager or ChunkAnalysisManager()
             # Initialize text_chunks
             self.text_chunks = []
             
@@ -114,88 +115,13 @@ class DeepSeekHandler:
         
     def process_text(self, text: str) -> None:
         """
-        Process input text, tokenize into sentences, and store as chunks.
+        Process input text, tokenize into sentences, and store as chunks using ChunkAnalysisManager.
         Args:
             text: The input text to process.
         Returns:
             None. Updates self.text_chunks in place.
         """
-        stripped_text = text.strip()
-        if not stripped_text:
-            logger.warning("Empty or whitespace-only text provided to process_text")
-            self.text_chunks = []
-            return
-
-        logger.info(f"Processing text with {len(stripped_text)} characters")
-        self.text_chunks = []
-
-        # Only chunk if the stripped text is longer than the max chunk size
-        if len(stripped_text) > MAX_CHUNK_SIZE:
-            logger.info(f"Text is large ({len(stripped_text)} chars), splitting into chunks (max {MAX_CHUNK_SIZE} chars)")
-            try:
-                # Ensure NLTK data is available (consider downloading separately in setup)
-                nltk.data.find('tokenizers/punkt')
-            except LookupError:
-                 logger.warning("NLTK 'punkt' model not found. Attempting download...")
-                 try:
-                     nltk.download('punkt', quiet=True)
-                     logger.info("NLTK 'punkt' downloaded successfully.")
-                 except Exception as e:
-                     logger.error(f"Failed to download NLTK 'punkt': {e}. Proceeding without sentence splitting.")
-                     self.text_chunks = [stripped_text] # Fallback if download fails
-                     return
-
-            sentences = nltk.sent_tokenize(stripped_text)
-            current_chunk = ""
-            
-            for sentence in sentences:
-                sentence_stripped = sentence.strip()
-                if not sentence_stripped:
-                    continue # Skip empty sentences
-
-                sentence_len = len(sentence_stripped)
-                current_chunk_len = len(current_chunk)
-
-                # Case 1: Sentence itself is too long
-                if sentence_len > MAX_CHUNK_SIZE:
-                    # Add the current chunk if it exists
-                    if current_chunk:
-                        self.text_chunks.append(current_chunk.strip())
-                    # Add the long sentence as its own chunk
-                    self.text_chunks.append(sentence_stripped)
-                    current_chunk = "" # Reset for the next sentence
-                    continue
-
-                # Case 2: Adding sentence exceeds chunk size
-                # Check length considering a space separator if needed
-                if current_chunk_len > 0 and current_chunk_len + sentence_len + 1 > MAX_CHUNK_SIZE:
-                    self.text_chunks.append(current_chunk.strip())
-                    current_chunk = sentence_stripped
-                # Case 3: Add sentence to the current chunk
-                else:
-                    if current_chunk: # Add space separator
-                        current_chunk += " " + sentence_stripped
-                    else:
-                        current_chunk = sentence_stripped
-
-            # Add the last remaining chunk if not empty
-            if current_chunk:
-                self.text_chunks.append(current_chunk.strip())
-
-            # If we have too many chunks, select representative ones
-            if len(self.text_chunks) > MAX_CHUNKS_PER_ANALYSIS:
-                logger.info(f"Too many chunks ({len(self.text_chunks)}), selecting {MAX_CHUNKS_PER_ANALYSIS} representative chunks")
-                # Select chunks evenly distributed throughout the text
-                step = len(self.text_chunks) / MAX_CHUNKS_PER_ANALYSIS
-                selected_chunks = []
-                for i in range(MAX_CHUNKS_PER_ANALYSIS):
-                    idx = min(int(i * step), len(self.text_chunks) - 1)
-                    selected_chunks.append(self.text_chunks[idx]) # Chunks are already stripped
-                self.text_chunks = selected_chunks
-        else:
-            # For smaller texts, just use the whole stripped text as a single chunk
-            self.text_chunks = [stripped_text]
-
+        self.text_chunks = self.chunk_manager.split_text_into_chunks(text)
         logger.info(f"Text processed into {len(self.text_chunks)} chunks")
 
     def generate_essay(self, topic: str, word_limit: int = 500, style: str = "academic", sources: List[Dict] = None) -> str:
@@ -454,14 +380,12 @@ The significance of {topic} extends beyond technical achievement to influence th
 This analysis of {topic} as a literary device demonstrates the inseparability of form and content in literature. By examining how technical aspects of writing contribute to meaning, we develop a deeper appreciation for literature as a carefully constructed art form that communicates through both what it says and how it is said."""
 
     def _analyze_chunk(self, chunk: str, topic: str, style: str, word_limit: int) -> str:
-        """Analyze a text chunk for relevance to the topic."""
-        # Check cache
-        cached = self._get_cached_chunk_analysis(chunk, topic, style, word_limit)
-        if cached:
+        """Analyze a text chunk for relevance to the topic, using chunk manager for caching."""
+        cached = self.chunk_manager.get_cached_chunk_analysis(chunk, topic, style, word_limit)
+        if cached is not None:
             return cached
-        # Perform analysis and cache
         analysis = self._perform_chunk_analysis(chunk, topic, style, word_limit)
-        self._cache_chunk_analysis(chunk, topic, style, word_limit, analysis)
+        self.chunk_manager.cache_chunk_analysis(chunk, topic, style, word_limit, analysis)
         return analysis
 
     # Helpers for chunk analysis, extracted to simplify _analyze_chunk
@@ -505,42 +429,6 @@ This analysis of {topic} as a literary device demonstrates the inseparability of
                 continue
             filtered.append(line)
         return '\n'.join(filtered)
-
-    def _get_chunk_cache_key(self, chunk: str, topic: str, style: str, word_limit: int) -> str:
-        """Generate a unique cache key for a chunk analysis."""
-        # Include model name in the key to avoid conflicts if the model changes
-        key_string = f"{chunk}-{topic}-{style}-{word_limit}-{self.model_name}"
-        return hashlib.sha256(key_string.encode('utf-8')).hexdigest()
-
-    def _get_chunk_cache_path(self, cache_key: str) -> Path:
-        """Get the cache file path for a chunk analysis."""
-        return self.chunk_cache_dir / f"{cache_key}.pkl"
-    
-    def _get_cached_chunk_analysis(self, chunk: str, topic: str, style: str, word_limit: int) -> str:
-        """Get cached chunk analysis if it exists."""
-        try:
-            cache_key = self._get_chunk_cache_key(chunk, topic, style, word_limit)
-            cache_path = self._get_chunk_cache_path(cache_key)
-            
-            if cache_path.exists():
-                logger.info(f"Using cached chunk analysis for key: {cache_key[:8]}...")
-                with open(cache_path, 'rb') as f:
-                    return pickle.load(f)
-        except Exception as e:
-            logger.error(f"Error accessing chunk cache: {str(e)}")
-        return None
-    
-    def _cache_chunk_analysis(self, chunk: str, topic: str, style: str, word_limit: int, analysis: str):
-        """Cache chunk analysis for future use."""
-        try:
-            cache_key = self._get_chunk_cache_key(chunk, topic, style, word_limit)
-            cache_path = self._get_chunk_cache_path(cache_key)
-            
-            with open(cache_path, 'wb') as f:
-                pickle.dump(analysis, f)
-            logger.info(f"Cached chunk analysis with key: {cache_key[:8]}...")
-        except Exception as e:
-            logger.error(f"Error caching chunk analysis: {str(e)}")
 
     def _truncate_text(self, text: str, target_words: int) -> str:
         """Truncate text to a target word count while preserving paragraph structure.

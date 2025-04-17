@@ -6,6 +6,7 @@ import hashlib
 import tempfile
 
 from src.book_to_essay.model_handler import DeepSeekHandler, MODEL_NAME
+from src.book_to_essay.chunk_analysis_manager import ChunkAnalysisManager
 from src.book_to_essay.config import MAX_CHUNK_SIZE, MAX_CHUNKS_PER_ANALYSIS
 
 
@@ -41,7 +42,8 @@ def test_setup_handler():
             prompt_template=mock_prompt_template,
             max_token_threshold=10,      # very low for test
             truncate_token_target=5,     # very low for test
-            min_essay_length=10          # very low for test
+            min_essay_length=10,         # very low for test
+            chunk_manager=ChunkAnalysisManager()
         )
 
     # 4. Manually assign the config object and mocks
@@ -50,7 +52,7 @@ def test_setup_handler():
     handler.tokenizer = mock_tokenizer # Ensure tokenizer mock is assigned
     handler.prompt_template = mock_prompt_template # Ensure template mock is assigned
 
-    # CacheManager will be mocked per-test if necessary
+    # ChunkAnalysisManager will be mocked per-test if necessary
 
     return handler
 # -----------------------------------------
@@ -77,13 +79,11 @@ def handler():
                     # Pass dummy model/tokenizer to satisfy __init__ signature if needed,
                     # but they won't be used if mocking is correct.
                     instance = DeepSeekHandler()
-                    # Explicitly set model_name as it's set in the real __init__ and used by cache key
                     instance.model_name = MODEL_NAME
-                    # Ensure chunk_cache_dir exists for tests that might need it (like _get_chunk_cache_path)
-                    instance.chunk_cache_dir = Path('/tmp/test_cache') # Use a temporary path
+                    # Use a real or mocked chunk_manager as required
+                    instance.chunk_manager = ChunkAnalysisManager()
                     # Manually initialize attributes normally set by __init__ that process_text might rely on
                     instance.text_chunks = []
-                    # process_text doesn't seem to rely on tokenizer or model directly
                     yield instance
 
 
@@ -162,9 +162,9 @@ class TestDeepSeekHandler:
 
     def test_process_text_exceeds_max_chunks(self, handler, monkeypatch):
         """Test processing text that generates more chunks than MAX_CHUNKS_PER_ANALYSIS."""
-        # Temporarily lower MAX_CHUNKS_PER_ANALYSIS for this test
+        # Patch MAX_CHUNKS_PER_ANALYSIS in chunk_analysis_manager
         test_max_chunks = 2
-        monkeypatch.setattr('src.book_to_essay.model_handler.MAX_CHUNKS_PER_ANALYSIS', test_max_chunks)
+        monkeypatch.setattr('src.book_to_essay.chunk_analysis_manager.MAX_CHUNKS_PER_ANALYSIS', test_max_chunks)
 
         # Create text that will generate more than test_max_chunks
         sentence = "This is a sentence. "
@@ -172,8 +172,6 @@ class TestDeepSeekHandler:
         text = (sentence * num_sentences)
 
         # Verify the setup - it should create more than test_max_chunks if not limited
-        handler_temp = DeepSeekHandler() # Need a fresh instance for calculation
-        handler_temp.text_chunks = []
         sentences = [s for s in text.strip().split('.') if s]
         assert len(sentences) > test_max_chunks, "Test setup failed: not enough sentences generated"
 
@@ -185,81 +183,61 @@ class TestDeepSeekHandler:
     # --- Tests for Cache Handling ---
 
     def test_get_cached_chunk_analysis_file_not_exists(self, handler, mocker):
-        """Test _get_cached_chunk_analysis when the cache file does not exist."""
-        # Mock the path object and its exists method
+        """Test get_cached_chunk_analysis on chunk_manager when the cache file does not exist."""
+        # Patch Path.exists to return False
         mock_path_instance = MagicMock(spec=Path)
         mock_path_instance.exists.return_value = False
-        mocker.patch('src.book_to_essay.model_handler.Path', return_value=mock_path_instance)
-
-        # Mock the helper methods called before Path()
-        mocker.patch.object(handler, '_get_chunk_cache_key', return_value='dummy_key')
-        mocker.patch.object(handler, '_get_chunk_cache_path', return_value=mock_path_instance)
-
-        # Set chunk_cache_dir needed by _get_chunk_cache_path (if not mocked away)
-        # Ensure the fixture sets up necessary attributes if not mocking __init__ fully
-        handler.chunk_cache_dir = Path('/fake/cache/dir') # Needed by real _get_chunk_cache_path
-
-        result = handler._get_cached_chunk_analysis(
+        mocker.patch('src.book_to_essay.chunk_analysis_manager.Path', return_value=mock_path_instance)
+        # Patch helper methods on chunk_manager
+        mocker.patch.object(handler.chunk_manager, 'get_chunk_cache_key', return_value='dummy_key')
+        mocker.patch.object(handler.chunk_manager, 'get_chunk_cache_path', return_value=mock_path_instance)
+        handler.chunk_manager.cache_dir = Path('/fake/cache/dir')
+        result = handler.chunk_manager.get_cached_chunk_analysis(
             chunk="test chunk",
             topic="test topic",
             style="test style",
             word_limit=100
         )
-
         assert result is None, "Should return None when cache file doesn't exist"
-        handler._get_chunk_cache_key.assert_called_once_with("test chunk", "test topic", "test style", 100)
-        handler._get_chunk_cache_path.assert_called_once_with('dummy_key')
+        handler.chunk_manager.get_chunk_cache_key.assert_called_once_with("test chunk", "test topic", "test style", 100)
+        handler.chunk_manager.get_chunk_cache_path.assert_called_once_with('dummy_key')
         mock_path_instance.exists.assert_called_once()
 
     def test_get_cached_chunk_analysis_file_exists(self, handler, mocker):
-        """Test _get_cached_chunk_analysis when the cache file exists and is valid."""
-        # Mock the path object and its exists method
+        """Test get_cached_chunk_analysis on chunk_manager when the cache file exists and is valid."""
         mock_path_instance = MagicMock(spec=Path)
         mock_path_instance.exists.return_value = True
-        mocker.patch('src.book_to_essay.model_handler.Path', return_value=mock_path_instance)
-
-        # Mock the helper methods called before Path()
-        mocker.patch.object(handler, '_get_chunk_cache_key', return_value='dummy_key')
-        mocker.patch.object(handler, '_get_chunk_cache_path', return_value=mock_path_instance)
-        handler.chunk_cache_dir = Path('/fake/cache/dir')
-
-        # Mock open and pickle.load
-        mock_file = MagicMock()
-        mock_open = mocker.patch('builtins.open', mocker.mock_open(read_data=b'dummy')) # read_data needed but not used by pickle mock
+        mocker.patch('src.book_to_essay.chunk_analysis_manager.Path', return_value=mock_path_instance)
+        mocker.patch.object(handler.chunk_manager, 'get_chunk_cache_key', return_value='dummy_key')
+        mocker.patch.object(handler.chunk_manager, 'get_chunk_cache_path', return_value=mock_path_instance)
+        mock_open = mocker.patch('builtins.open', mocker.mock_open(read_data=b"data"))
         mock_pickle_load = mocker.patch('pickle.load', return_value={'analysis': 'cached data'})
-
-        result = handler._get_cached_chunk_analysis(
+        handler.chunk_manager.cache_dir = Path('/fake/cache/dir')
+        result = handler.chunk_manager.get_cached_chunk_analysis(
             chunk="test chunk",
             topic="test topic",
             style="test style",
             word_limit=100
         )
-
         expected_data = {'analysis': 'cached data'}
         assert result == expected_data, "Should return the cached data"
-        handler._get_chunk_cache_key.assert_called_once_with("test chunk", "test topic", "test style", 100)
-        handler._get_chunk_cache_path.assert_called_once_with('dummy_key')
+        handler.chunk_manager.get_chunk_cache_key.assert_called_once_with("test chunk", "test topic", "test style", 100)
+        handler.chunk_manager.get_chunk_cache_path.assert_called_once_with('dummy_key')
         mock_path_instance.exists.assert_called_once()
         mock_open.assert_called_once_with(mock_path_instance, 'rb')
-        mock_pickle_load.assert_called_once() # Check it was called, args depend on file handle mock
+        mock_pickle_load.assert_called_once()
 
     def test_get_chunk_cache_key(self, handler):
-        """Test that _get_chunk_cache_key produces a consistent SHA256 hash."""
+        """Test that get_chunk_cache_key on chunk_manager produces a consistent MD5 hash."""
         chunk = "This is a test chunk."
         topic = "Test Topic"
         style = "Academic"
         word_limit = 500
-
-        # Calculate expected key using the handler's actual model_name attribute
-        # (Fixture should ensure handler.model_name is set correctly)
-        key_string = f"{chunk}-{topic}-{style}-{word_limit}-{handler.model_name}"
-        expected_hash = hashlib.sha256(key_string.encode('utf-8')).hexdigest()
-
-        # Call the method under test
-        actual_key = handler._get_chunk_cache_key(chunk, topic, style, word_limit)
-
+        key_string = f"{chunk}|{topic}|{style}|{word_limit}"
+        expected_hash = hashlib.md5(key_string.encode()).hexdigest()
+        actual_key = handler.chunk_manager.get_chunk_cache_key(chunk, topic, style, word_limit)
         assert actual_key == expected_hash, "Generated cache key does not match expected hash"
-        assert len(actual_key) == 64, "Cache key should be a 64-character SHA256 hash"
+        assert len(actual_key) == 32, "Cache key should be a 32-character MD5 hash"
 
     # --- Tests for generate_essay --- #
 
@@ -289,8 +267,8 @@ class TestDeepSeekHandler:
         handler._analyze_chunk = MagicMock(side_effect=mock_analyses)
 
         # --- Configure mocks directly on the handler instance --- #
-        handler._get_cached_chunk_analysis = MagicMock(return_value=None)
-        handler._cache_chunk_analysis = MagicMock()
+        handler.chunk_manager.get_cached_chunk_analysis = MagicMock(return_value=None)
+        handler.chunk_manager.cache_chunk_analysis = MagicMock()
         # Simulate analysis truncation for token limit
         handler._truncate_text = MagicMock(return_value=combined_analysis)
 
@@ -367,20 +345,15 @@ class TestDeepSeekHandler:
             if chunk == "Chunk 1":
                 return cached_analysis
             return None
-        # Directly test _analyze_chunk caching behavior without calling generate_essay
-        with patch.object(type(handler), "_get_cached_chunk_analysis", side_effect=cache_side_effect):
-            handler._cache_chunk_analysis = MagicMock()
-            # Simulate text_chunks for analysis
-            handler.text_chunks = ["Chunk 1", "Chunk 2"]
-            # Analyze both chunks
-            analysis1 = handler._analyze_chunk("Chunk 1", test_topic, test_style, test_limit)
-            analysis2 = handler._analyze_chunk("Chunk 2", test_topic, test_style, test_limit)
-            # Cached result for chunk1 and fresh analysis for chunk2
-            assert analysis1 == cached_analysis
-            assert callable(analysis2) or isinstance(analysis2, str)
-            # Ensure cache retrieval and storage calls
-            assert ("Chunk 1", test_topic, test_style, test_limit) in cache_calls
-            assert ("Chunk 2", test_topic, test_style, test_limit) in cache_calls
-            handler._cache_chunk_analysis.assert_called_once_with(
-                "Chunk 2", test_topic, test_style, test_limit, analysis2
-            )
+        handler.chunk_manager.get_cached_chunk_analysis = MagicMock(side_effect=cache_side_effect)
+        handler.chunk_manager.cache_chunk_analysis = MagicMock()
+        handler.text_chunks = ["Chunk 1", "Chunk 2"]
+        analysis1 = handler._analyze_chunk("Chunk 1", test_topic, test_style, test_limit)
+        analysis2 = handler._analyze_chunk("Chunk 2", test_topic, test_style, test_limit)
+        assert analysis1 == cached_analysis
+        assert callable(analysis2) or isinstance(analysis2, str)
+        assert ("Chunk 1", test_topic, test_style, test_limit) in cache_calls
+        assert ("Chunk 2", test_topic, test_style, test_limit) in cache_calls
+        handler.chunk_manager.cache_chunk_analysis.assert_called_once_with(
+            "Chunk 2", test_topic, test_style, test_limit, analysis2
+        )
