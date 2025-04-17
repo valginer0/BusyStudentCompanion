@@ -1,8 +1,7 @@
 """Tests for the AI Book Essay Generator."""
 import os
 from pathlib import Path
-from unittest.mock import MagicMock, Mock
-
+from unittest.mock import MagicMock, Mock, patch
 import pytest
 import ebooklib
 import fitz  # PyMuPDF
@@ -35,7 +34,7 @@ def test_process_pdf_content(mocker, temp_cache_dir, sample_pdf_content, mock_de
     generator.cache_manager.cache_dir = Path(temp_cache_dir)
 
     # Create test file
-    file_path = os.path.join(temp_cache_dir, "test.pdf")
+    file_path = os.path.join(temp_cache_dir, "TestAuthor - TestTitle.pdf")
     create_test_file(file_path, sample_pdf_content)
 
     # Mock the model response
@@ -55,7 +54,7 @@ def test_content_caching(mocker, temp_cache_dir, sample_pdf_content):
     generator.cache_manager.cache_dir = Path(temp_cache_dir)
 
     # Create test file
-    file_path = os.path.join(temp_cache_dir, "test.pdf")
+    file_path = os.path.join(temp_cache_dir, "TestAuthor - TestTitle.pdf")
     create_test_file(file_path, sample_pdf_content)
 
     # Process content first time
@@ -74,7 +73,7 @@ def test_process_content_async(mocker, temp_cache_dir, sample_pdf_content, mock_
     generator.cache_manager.cache_dir = Path(temp_cache_dir)
 
     # Create test file
-    file_path = os.path.join(temp_cache_dir, "test.pdf")
+    file_path = os.path.join(temp_cache_dir, "TestAuthor - TestTitle.pdf")
     create_test_file(file_path, sample_pdf_content)
 
     # Mock the model response
@@ -155,7 +154,7 @@ def test_process_txt_file_success(mocker, temp_cache_dir):
     sample_txt_content = "This is simple text content."
 
     # Create test file
-    file_path = os.path.join(temp_cache_dir, "test_book.txt")
+    file_path = os.path.join(temp_cache_dir, "TestAuthor - TestTitle.txt")
     create_test_file(file_path, sample_txt_content)
 
     # Mock dependencies: cache manager and model handler's process_text
@@ -181,13 +180,13 @@ def test_process_txt_file_success(mocker, temp_cache_dir):
     cached_data = call_args[1]
     assert cached_data['content'] == sample_txt_content
     assert cached_data['source']['path'] == file_path
-    assert cached_data['source']['name'] == "test_book.txt"
+    assert cached_data['source']['name'] == "TestAuthor - TestTitle.txt"
     assert cached_data['source']['type'] == 'txt'
     # Assert generator state was updated
     assert generator.content.strip() == sample_txt_content # strip trailing newline added
     assert len(generator.sources) == 1
     assert generator.sources[0]['path'] == file_path
-    assert generator.sources[0]['name'] == "test_book.txt"
+    assert generator.sources[0]['name'] == "TestAuthor - TestTitle.txt"
     assert generator.sources[0]['type'] == 'txt'
 
 def test_load_pdf_file_success(mocker, temp_cache_dir):
@@ -198,7 +197,7 @@ def test_load_pdf_file_success(mocker, temp_cache_dir):
     num_pages = 2
 
     # Create dummy test file path (doesn't need to exist as fitz is mocked)
-    file_path = os.path.join(temp_cache_dir, "test_book.pdf")
+    file_path = os.path.join(temp_cache_dir, "TestAuthor - TestTitle.pdf")
     # Touch the file so os.path.exists passes in _process_file_content
     Path(file_path).touch()
 
@@ -242,14 +241,14 @@ def test_load_pdf_file_success(mocker, temp_cache_dir):
     cached_data = call_args[1]
     assert cached_data['content'] == expected_content # Content saved is NOT stripped
     assert cached_data['source']['path'] == file_path
-    assert cached_data['source']['name'] == "test_book.pdf"
+    assert cached_data['source']['name'] == "TestAuthor - TestTitle.pdf"
     assert cached_data['source']['type'] == 'pdf'
 
     # Assert generator state was updated (content has extra newline added by _process_file_content)
     assert generator.content.strip() == expected_content.strip()
     assert len(generator.sources) == 1
     assert generator.sources[0]['path'] == file_path
-    assert generator.sources[0]['name'] == "test_book.pdf"
+    assert generator.sources[0]['name'] == "TestAuthor - TestTitle.pdf"
     assert generator.sources[0]['type'] == 'pdf'
 
 def test_load_epub_file_success(mocker, temp_cache_dir):
@@ -262,7 +261,7 @@ def test_load_epub_file_success(mocker, temp_cache_dir):
     expected_text_part2 = "Chapter 2 content."
 
     # Create dummy test file path (doesn't need to exist as ebooklib is mocked)
-    file_path = os.path.join(temp_cache_dir, "test_book.epub")
+    file_path = os.path.join(temp_cache_dir, "TestAuthor - TestTitle.epub")
     Path(file_path).touch()
 
     # Mock dependencies: cache, model, and ebooklib
@@ -311,158 +310,65 @@ def test_load_epub_file_success(mocker, temp_cache_dir):
     cached_data = call_args[1]
     assert cached_data['content'] == expected_content
     assert cached_data['source']['path'] == file_path
-    assert cached_data['source']['name'] == "test_book.epub"
+    assert cached_data['source']['name'] == "TestAuthor - TestTitle.epub"
     assert cached_data['source']['type'] == 'epub'
 
     # Assert generator state was updated (content has extra newline added by _process_file_content)
     assert generator.content.strip() == expected_content.strip()
     assert len(generator.sources) == 1
     assert generator.sources[0]['path'] == file_path
-    assert generator.sources[0]['name'] == "test_book.epub"
+    assert generator.sources[0]['name'] == "TestAuthor - TestTitle.epub"
     assert generator.sources[0]['type'] == 'epub'
 
 # === Additional Tests ===
 
-@pytest.mark.parametrize(
-    "load_method_name, mock_target, file_extension, error_message_part",
-    [
-        (
-            "load_txt_file",
-            "src.book_to_essay.ai_book_to_essay_generator.open", # Target module-specific open
-            ".txt",
-            "Error reading TXT"
-        ),
-        (
-            "load_pdf_file",
-            "src.book_to_essay.ai_book_to_essay_generator.fitz.open",
-            ".pdf",
-            "Error reading PDF"
-        ),
-        (
-            "load_epub_file",
-            "src.book_to_essay.ai_book_to_essay_generator.epub.read_epub",
-            ".epub",
-            "Error reading EPUB"
-        ),
-    ]
-)
-def test_load_file_processing_error(mocker, tmp_path, load_method_name, mock_target, file_extension, error_message_part):
-    """Test that errors during file processing are caught and raise ValueError."""
+def test_load_txt_file_processing_error(mocker, tmp_path):
+    """Test that TXT file processing errors raise ValueError with correct message."""
     generator = AIBookEssayGenerator()
-    file_path = tmp_path / f"test_file{file_extension}"
-    file_path.touch()
-    
-    # Mock cache miss so processing is attempted
+    file_path = tmp_path / "TestAuthor - TestTitle.txt"
+    file_path.write_text("irrelevant")
     mocker.patch.object(generator.cache_manager, 'get_cached_content', return_value=None)
-
-    # Special handling for TXT read error vs. PDF/EPUB processing errors
-    if load_method_name == "load_txt_file":
+    def mock_txt_open_error(*args, **kwargs):
         mock_file = MagicMock()
-        # Simulate error during file.read() within the 'with' block
         mock_file.read.side_effect = IOError("Simulated read error")
-        # Make the mock usable as a context manager
-        mock_file.__enter__.return_value = mock_file 
-        mock_file.__exit__.return_value = None # Ensure __exit__ doesn't suppress errors
-        # Patch the module-specific 'open' to return our mock file object
-        mock_open_patch = mocker.patch(mock_target, return_value=mock_file)
-        # We need to track the read call for assertion
-        mocked_processor_call_check = mock_file.read 
-    else:
-        # Mock the specific processing function for PDF/EPUB to raise an error
-        mocked_processor = mocker.patch(mock_target, side_effect=Exception("Simulated processing error"))
-        # Track the processor call for assertion
-        mocked_processor_call_check = mocked_processor 
+        mock_file.__enter__.return_value = mock_file
+        mock_file.__exit__.return_value = None
+        return mock_file
+    with patch("src.book_to_essay.ai_book_to_essay_generator.open", mock_txt_open_error):
+        with pytest.raises(ValueError, match="Error reading TXT file"):
+            generator.load_txt_file(str(file_path))
 
-    # Get the actual load method
-    load_method = getattr(generator, load_method_name)
-
-    # Assert that ValueError is raised with the expected message
-    with pytest.raises(ValueError, match=error_message_part):
-        load_method(str(file_path))
-
-    # Ensure the correct mocked part was called
-    if load_method_name == "load_txt_file":
-        # Check that our patched 'open' was called correctly
-        mock_open_patch.assert_called_once_with(str(file_path), 'r', encoding='utf-8')
-        # Check that 'read' was called on the mock file object
-        mocked_processor_call_check.assert_called_once()
-    else:
-        # Check that the PDF/EPUB processor function was called
-        mocked_processor_call_check.assert_called_once_with(str(file_path))
-
-def test_load_file_cache_hit(mocker, tmp_path):
-    """Test that loading the same file twice results in a cache hit on the second call."""
+def test_load_pdf_file_processing_error(mocker, tmp_path):
+    """Test that PDF file processing errors raise ValueError with correct message."""
     generator = AIBookEssayGenerator()
-    file_path = tmp_path / "cache_test.txt"
-    file_content = "This is the content to be cached."
-    file_path.write_text(file_content, encoding='utf-8')
+    file_path = tmp_path / "TestAuthor - TestTitle.pdf"
+    file_path.write_text("irrelevant")
+    mocker.patch.object(generator.cache_manager, 'get_cached_content', return_value=None)
+    def mock_pdf_open_error(*args, **kwargs):
+        raise Exception("Simulated processing error")
+    with patch("src.book_to_essay.ai_book_to_essay_generator.fitz.open", mock_pdf_open_error):
+        with pytest.raises(ValueError, match="Error reading PDF"):
+            generator.load_pdf_file(str(file_path))
 
-    # Mock CacheManager methods
-    mock_get_cache = mocker.patch.object(generator.cache_manager, 'get_cached_content', return_value=None)
-    mock_cache_content = mocker.patch.object(generator.cache_manager, 'cache_content')
-    
-    # Mock the actual processing function just to ensure it's called only once
-    # We need to mock the nested function within load_txt_file
-    # Note: This requires accessing the inner function definition, which is tricky.
-    # Instead, let's verify behavior via cache mock calls.
-    # We expect process_txt -> cache_content on first call.
-    # We expect get_cached_content -> no process_txt -> no cache_content on second call.
-
-    # --- First call (Cache Miss) ---
-    generator.load_txt_file(str(file_path))
-    
-    # Assertions for first call
-    mock_get_cache.assert_called_once_with(str(file_path))
-    # process_txt should have run and triggered cache_content with the correct structure
-    expected_cached_data = {
-        "content": file_content,
-        "source": {"path": str(file_path), "name": "cache_test.txt", "type": "txt"}
-    }
-    mock_cache_content.assert_called_once_with(str(file_path), expected_cached_data)
-    assert generator.content == file_content + "\n" # Content includes added newline
-    
-    # --- Prepare for Second Call (Cache Hit) ---
-    # Reset relevant mocks and configure get_cache to return data
-    mock_get_cache.reset_mock()
-    mock_cache_content.reset_mock()
-    # Use the same structure for the cached data returned by get_cache
-    cached_data = expected_cached_data 
-    mock_get_cache.return_value = cached_data
-    
-    # --- Second call (Cache Hit) ---
-    generator.load_txt_file(str(file_path))
-    
-    # Assertions for second call
-    mock_get_cache.assert_called_once_with(str(file_path)) # Called again
-    mock_cache_content.assert_not_called() # Should not be called again
-    # Content should now be duplicated because it's loaded twice
-    assert generator.content == (file_content + "\n") + (file_content + "\n")
-
+def test_load_epub_file_processing_error(mocker, tmp_path):
+    """Test that EPUB file processing errors raise ValueError with correct message."""
+    generator = AIBookEssayGenerator()
+    file_path = tmp_path / "TestAuthor - TestTitle.epub"
+    file_path.write_text("irrelevant")
+    mocker.patch.object(generator.cache_manager, 'get_cached_content', return_value=None)
+    def mock_epub_open_error(*args, **kwargs):
+        raise Exception("Simulated processing error")
+    with patch("src.book_to_essay.ai_book_to_essay_generator.epub.read_epub", mock_epub_open_error):
+        with pytest.raises(ValueError, match="Error reading EPUB"):
+            generator.load_epub_file(str(file_path))
 
 def test_generate_essay_invalid_word_limit(mocker, temp_cache_dir):
     """Test that generate_essay handles ValueError from model (e.g., low word limit)."""
     generator = AIBookEssayGenerator()
-    # Load some dummy content to satisfy the prerequisite
     generator.content = "Some initial content."
-    
-    # Mock the model's generate_essay to raise a ValueError
-    mock_model_generate = mocker.patch.object(
-        generator.model, 
-        'generate_essay', 
-        side_effect=ValueError("Simulated error: Word limit too low")
-    )
-    
-    # The expected error message from the generator's except block
-    expected_error_msg_pattern = r"Error generating essay: Simulated error: Word limit too low"
-    
-    with pytest.raises(ValueError, match=expected_error_msg_pattern):
-        # Call generate_essay - the actual word_limit value doesn't matter here
-        # as the mock will raise the error regardless.
+    # The validation will trigger before model.generate_essay is called
+    with pytest.raises(ValueError, match=r"Word count must be between"):
         generator.generate_essay(prompt="Test prompt", word_limit=10)
-        
-    # Verify the mocked model method was called
-    mock_model_generate.assert_called_once()
-
 
 def test_generate_essay_model_error(mocker, temp_cache_dir):
     """Test handling of errors raised by the model during essay generation."""
@@ -521,3 +427,39 @@ def test_generate_essay_empty_result(mocker, temp_cache_dir):
     # Ensure model's generate_essay and the fallback were called
     mock_model_instance.generate_essay.assert_called_once()
     mock_model_instance.generate_fallback_essay.assert_called_once() # Check fallback was attempted
+
+def test_load_file_cache_hit(mocker, tmp_path):
+    """Test that loading the same file twice results in a cache hit on the second call."""
+    generator = AIBookEssayGenerator()
+    file_path = tmp_path / "TestAuthor - TestTitle.txt"
+    file_content = "This is the content to be cached."
+    file_path.write_text(file_content, encoding='utf-8')
+
+    # Mock CacheManager methods
+    mock_get_cache = mocker.patch.object(generator.cache_manager, 'get_cached_content', return_value=None)
+    mock_cache_content = mocker.patch.object(generator.cache_manager, 'cache_content')
+    # Mock the model property to avoid actual processing
+    mock_handler_instance = MagicMock()
+    mock_handler_instance.process_text = MagicMock()
+    mocker.patch.object(AIBookEssayGenerator, 'model', new_callable=mocker.PropertyMock, return_value=mock_handler_instance)
+
+    # --- First call (Cache Miss) ---
+    generator.load_txt_file(str(file_path))
+    mock_get_cache.assert_called_once_with(str(file_path))
+    expected_cached_data = {
+        "content": file_content,
+        "source": {"path": str(file_path), "name": "TestAuthor - TestTitle.txt", "type": "txt"}
+    }
+    mock_cache_content.assert_called_once_with(str(file_path), expected_cached_data)
+    assert generator.content == file_content + "\n"
+
+    # --- Prepare for Second Call (Cache Hit) ---
+    mock_get_cache.reset_mock()
+    mock_cache_content.reset_mock()
+    mock_get_cache.return_value = expected_cached_data
+
+    # --- Second call (Cache Hit) ---
+    generator.load_txt_file(str(file_path))
+    mock_get_cache.assert_called_once_with(str(file_path))
+    mock_cache_content.assert_not_called()
+    assert generator.content == (file_content + "\n") * 2

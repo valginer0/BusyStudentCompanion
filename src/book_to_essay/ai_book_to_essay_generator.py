@@ -9,6 +9,7 @@ from typing import List, Optional, Dict, Any
 from src.book_to_essay.model_handler import DeepSeekHandler
 from src.book_to_essay.cache_manager import CacheManager
 from src.book_to_essay.validation import validate_word_count, validate_file_extension, validate_style, validate_filename_for_citation
+from src.book_to_essay.error_utils import log_and_raise
 import logging
 from src.book_to_essay.essay_utilities import get_essay_cache_key
 
@@ -27,12 +28,14 @@ class AIBookEssayGenerator:
         if self._model is None:
             try:
                 logger.info("Creating new DeepSeekHandler instance")
-                self._model = DeepSeekHandler()
+                # Properly load model and tokenizer before passing to DeepSeekHandler
+                from src.book_to_essay.model_loader import load_model, load_tokenizer
+                base_model = load_model()
+                tokenizer = load_tokenizer()
+                self._model = DeepSeekHandler(model=base_model, tokenizer=tokenizer)
             except Exception as e:
                 logger.error(f"Error initializing model: {str(e)}")
                 raise RuntimeError(f"Failed to initialize model: {str(e)}")
-        else:
-            logger.info("Using existing DeepSeekHandler instance")
         return self._model
 
     def _process_file_content(self, file_path: str, processor_func) -> Dict[str, Any]:
@@ -88,16 +91,12 @@ class AIBookEssayGenerator:
                         self.model.process_text(text)
                         return text
                     except (IOError, UnicodeDecodeError) as e:
-                        logger.error(f"Error reading TXT file {file_path}: {e}")
-                        raise ValueError(f"Error reading TXT file: {e}") from e
+                        log_and_raise(f"Error reading TXT file {file_path}", e)
             except FileNotFoundError:
-                # Catching FileNotFoundError here for clarity, although load_file also checks
                 logger.error(f"TXT file not found: {file_path}")
-                raise # Re-raise FileNotFoundError to be handled by the caller
+                raise
             except Exception as e:
-                # Catch any other potential errors during open
-                logger.error(f"Unexpected error opening or processing TXT file {file_path}: {e}")
-                raise ValueError(f"Unexpected error processing TXT file: {e}") from e
+                log_and_raise(f"Unexpected error opening or processing TXT file {file_path}", e)
         
         self._process_file_content(file_path, process_txt)
 
@@ -116,7 +115,7 @@ class AIBookEssayGenerator:
                     raise ValueError("PDF appears to be empty or unreadable")
                 return content
             except Exception as e:
-                raise ValueError(f"Error reading PDF {file_path}: {str(e)}")
+                log_and_raise(f"Error reading PDF {file_path}", e)
         
         self._process_file_content(file_path, process_pdf)
 
@@ -135,7 +134,7 @@ class AIBookEssayGenerator:
                     raise ValueError("EPUB appears to be empty or contains no readable text")
                 return content
             except Exception as e:
-                raise ValueError(f"Error reading EPUB {file_path}: {str(e)}")
+                log_and_raise(f"Error reading EPUB {file_path}", e)
         
         self._process_file_content(file_path, process_epub)
 
