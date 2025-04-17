@@ -76,29 +76,49 @@ class DeepSeekHandler:
         logger.info(f"Text processed into {len(self.text_chunks)} chunks")
 
     def generate_essay(self, topic: str, word_limit: int = 500, style: str = "academic", sources: List[Dict] = None) -> str:
-        """Generate an essay using chunk-based analysis.
-        
-        Args:
-            topic: Essay topic to write about
-            word_limit: Target word count
-            style: Writing style (academic, analytical, etc.)
-            sources: Optional list of citation sources
-            
-        Returns:
-            A generated essay
-        """
+        """Generate an essay using chunk-based analysis."""
         logger.info(f"Generating essay on topic: {topic} with {word_limit} word limit in {style} style")
-        
-        # Validate text chunks exist
+
         if not hasattr(self, 'text_chunks') or not self.text_chunks:
             logger.error("No text has been loaded. Please load text first.")
             raise RuntimeError("No text has been loaded. Please load text first.")
-        
-        # If source not provided, try to extract from book data
+
         if sources is None and hasattr(self, 'book_data'):
             sources = [self.book_data]
-        
-        # Prepare MLA citations
+
+        mla_citations, citations_text = self._prepare_citations(sources)
+
+        try:
+            analyses = self._collect_chunk_analyses(topic, style, word_limit)
+            combined_analysis = "\n\n".join(analyses)
+            combined_analysis = self._truncate_combined_analysis(combined_analysis)
+            prompt = self.prompt_template.format_essay_prompt(
+                topic=topic,
+                style=style,
+                word_limit=word_limit,
+                analysis=combined_analysis,
+                citations=mla_citations
+            )
+            device = next(self.model.parameters()).device
+            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=4096).to(device)
+            with torch.no_grad():
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens=min(2048, word_limit * 3),
+                    temperature=TEMPERATURE,
+                    do_sample=True
+                )
+            response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+            essay = self.prompt_template.extract_response(response)
+            if citations_text and "Works Cited" not in essay:
+                essay += f"\n\nWorks Cited:\n{citations_text}"
+            essay = self._postprocess_essay(essay, word_limit)
+        except Exception as e:
+            logger.error(f"Error during essay generation: {str(e)}")
+            essay = self._generate_fallback_essay(topic, style, word_limit, reason=FallbackReason.GENERATION_ERROR)
+        return essay
+
+    def _prepare_citations(self, sources):
         mla_citations = None
         citations_text = ""
         if sources:
@@ -111,160 +131,41 @@ class DeepSeekHandler:
                     if 'year' in source:
                         mla_citation += f" {source['year']}."
                     mla_citations.append(mla_citation)
-            
             if mla_citations:
-                citations_text = "Works Cited\n\n" + "\n".join(mla_citations)
-        
-        # Process the chunks
-        chunk_analyses = []
-        logger.info(f"Processing {len(self.text_chunks)} text chunks for analysis")
-        
-        if not self.text_chunks or all(not chunk.strip() for chunk in self.text_chunks):
-            logger.error("All text chunks are empty or whitespace")
-            raise RuntimeError("All text chunks are empty or whitespace")
-        
-        # Analyze each chunk
+                citations_text = "\n".join(mla_citations)
+        return mla_citations, citations_text
+
+    def _collect_chunk_analyses(self, topic, style, word_limit):
+        analyses = []
         for chunk in self.text_chunks:
             analysis = self._analyze_chunk(chunk, topic, style, word_limit)
-            chunk_analyses.append(analysis)
-        
-        # If no analyses were produced, raise an error
-        if not chunk_analyses:
-            logger.error("No chunk analyses were produced")
-            raise RuntimeError("No chunk analyses were produced")
-        
-        logger.info(f"Successfully analyzed {len(chunk_analyses)} chunks")
-        
-        # Generate the essay using the analyses
-        try:
-            # Combine all analyses into one
-            combined_analysis = "\n\n".join(chunk_analyses)
-            # Always truncate combined_analysis to match test expectation and ensure token safety
-            combined_analysis = self._truncate_text(combined_analysis, self.truncate_token_target)
-            
-            # Format the prompt for essay generation
-            prompt = self.prompt_template.format_essay_prompt(
-                topic=topic,
-                style=style,
-                word_limit=word_limit,
-                analysis=combined_analysis,
-                citations=mla_citations
-            )
-            
-            # Do the generation
-            device = next(self.model.parameters()).device
-            inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=4096).to(device)
-            
-            logger.info("Generating full essay from analysis")
-            
-            with torch.no_grad():
-                outputs = self.model.generate(
-                    **inputs,
-                    max_new_tokens=min(2048, word_limit * 3),  # Limit based on word count
-                    temperature=TEMPERATURE,
-                    do_sample=True
-                )
-            
-            # Decode the model output
-            response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-            
-            # Try to extract just the essay part
-            essay = self.prompt_template.extract_response(response)
-            
-            # Post-process the essay
-            try:
-                logger.info("Filtering and cleaning essay")
-                
-                # Define patterns to skip (instructions, etc.)
-                skip_patterns = [
-                    r"(?i)essay:", r"(?i)essay on", 
-                    r"(?i)here'?s? (?:an|my|the) essay", r"(?i)I'?ll write an essay",
-                    r"(?i)this essay will", r"(?i)in this essay",
-                    r"(?i)instructions", r"(?i)prompt", r"(?i)guidelines",
-                    r"(?i)understand(?:ing)? the", r"(?i)analyze the text",
-                    r"(?i)let'?s analyze", r"(?i)let'?s begin",
-                    r"(?i)I will analyze", r"(?i)I'?ll analyze",
-                    r"(?i)start(?:ing)? (?:with|by)", r"(?i)start directly",
-                    r"(?i)do not repeat", r"(?i)don'?t repeat",
-                    r"(?i)Title:", r"(?i)MLA Format:",
-                    r"(?i)ESSAY"
-                ]
-                
-                # Try to find where the actual essay content begins
-                essay_start_patterns = [
-                    r'(?<=\n\n)[A-Z][^.!?]{10,}[.!?]',  # Paragraph starting after 2 newlines
-                    r'^[A-Z][^.!?]{10,}[.!?]',  # Essay starting with a proper sentence at the beginning
-                    r'(?<=\n)[A-Z][^.!?]{10,}[.!?]',  # Paragraph starting after 1 newline
-                    r'[A-Z][^.!?]{20,}[.!?]'   # Any proper longer sentence
-                ]
-                
-                for pattern in essay_start_patterns:
-                    match = re.search(pattern, essay)
-                    if match:
-                        start_index = match.start()
-                        essay = essay[start_index:]
-                        logger.info(f"Found essay start using pattern: {pattern}")
-                        break
-                
-                # Skip any header lines that don't look like essay content
-                lines = essay.split('\n')
-                start_line = 0
-                for i, line in enumerate(lines):
-                    if any(re.search(pattern, line) for pattern in skip_patterns):
-                        logger.info(f"Skipping line {i}: {line}")
-                        start_line = i + 1
-                    elif len(line.strip()) > 30 and re.match(r'^[A-Z]', line.strip()):
-                        # Found a substantive line that starts with uppercase
-                        break
-                
-                # Reconstruct the essay from the starting line
-                if start_line > 0 and start_line < len(lines):
-                    essay = '\n'.join(lines[start_line:])
-                
-                if not essay or len(essay.strip()) < self.min_essay_length:
-                    logger.warning("Essay too short after filtering, raising error.")
-                    raise RuntimeError(f"Essay generation failed due to insufficient content: {len(essay)} characters")
-                
-                # Verify essay has proper structure
-                if essay and len(essay.strip()) >= self.min_essay_length:
-                    # Check if it has at least 3 paragraphs
-                    paragraphs = re.split(r'\n\s*\n', essay)
-                    if len(paragraphs) < 3:
-                        # Find paragraph boundaries using sentences
-                        sentences = re.findall(r'[A-Z][^.!?]*[.!?]', essay, re.IGNORECASE)
-                        if len(sentences) >= 9:  # Minimum 9 sentences for 3 paragraphs
-                            # Group into paragraphs of 3-5 sentences each
-                            reconstructed_paragraphs = []
-                            current_para = []
-                            
-                            for i, sentence in enumerate(sentences):
-                                current_para.append(sentence)
-                                
-                                # Start a new paragraph every 3-5 sentences
-                                if len(current_para) >= 3 and (len(current_para) >= 5 or i % 4 == 3):
-                                    reconstructed_paragraphs.append(' '.join(current_para))
-                                    current_para = []
-                            
-                            # Add any remaining sentences as the last paragraph
-                            if current_para:
-                                reconstructed_paragraphs.append(' '.join(current_para))
-                            
-                            if len(reconstructed_paragraphs) >= 3:
-                                essay = '\n\n'.join(reconstructed_paragraphs)
-                                logger.info("Reconstructed essay into structured paragraphs")
-                
-                logger.info(f"After comprehensive filtering, essay starts with: {essay[:100] if essay else 'EMPTY'}...")
-            except Exception as e:
-                logger.error(f"Error during essay filtering: {str(e)}")
-                raise RuntimeError(f"Essay filtering failed due to an internal error: {str(e)}")
-            
-            # Add Works Cited if not already included
-            if "Works Cited" not in essay and mla_citations:
-                essay += f"\n\n{citations_text}"
-            return essay
-        except Exception as e:
-            logger.error(f"Error generating final essay: {str(e)}")
-            raise
+            analysis = self._filter_analysis(analysis)
+            analyses.append(analysis)
+        return analyses
+
+    def _format_essay_from_analyses(self, analyses, citations_text, word_limit, style):
+        essay_body = "\n\n".join(analyses)
+        if citations_text:
+            essay_body += f"\n\nWorks Cited:\n{citations_text}"
+        return essay_body
+
+    def _postprocess_essay(self, essay, word_limit):
+        # Truncate if necessary
+        if len(essay.split()) > word_limit:
+            essay = self._truncate_text(essay, word_limit)
+        # Structure paragraphs (basic)
+        paragraphs = essay.split('\n\n')
+        reconstructed = []
+        current = []
+        for para in paragraphs:
+            if para.strip():
+                current.append(para.strip())
+                if len(' '.join(current).split()) > 120:
+                    reconstructed.append(' '.join(current))
+                    current = []
+        if current:
+            reconstructed.append(' '.join(current))
+        return '\n\n'.join(reconstructed)
 
     def _generate_fallback_essay(self, topic: str, style: str, word_limit: int, reason: FallbackReason = FallbackReason.UNKNOWN) -> str:
         """Generate a fallback essay when the main generation process fails."""
@@ -408,3 +309,6 @@ This analysis of {topic} as a literary device demonstrates the inseparability of
         
         # For minor truncation, just take the first N words
         return ' '.join(words[:target_words])
+
+    def _truncate_combined_analysis(self, combined_analysis: str) -> str:
+        return self._truncate_text(combined_analysis, self.truncate_token_target)
