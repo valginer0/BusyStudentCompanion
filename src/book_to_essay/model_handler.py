@@ -22,16 +22,26 @@ logger = logging.getLogger(__name__)
 class DeepSeekHandler:
     """Handler for the language model."""
     
-    def __init__(self, model=None, tokenizer=None, prompt_template=None, max_token_threshold=4000, truncate_token_target=3500, min_essay_length=100):
-        """Initialize the model and tokenizer with appropriate quantization.
-        
+    def __init__(
+        self,
+        model: Optional[object] = None,
+        tokenizer: Optional[object] = None,
+        prompt_template: Optional[object] = None,
+        max_token_threshold: int = 4000,
+        truncate_token_target: int = 3500,
+        min_essay_length: int = 100
+    ) -> None:
+        """
+        Initialize the model handler with model, tokenizer, and prompt template.
         Args:
-            model: Optional pre-loaded model to reuse
-            tokenizer: Optional pre-loaded tokenizer to reuse
-            prompt_template: Optional pre-loaded prompt template to reuse
-            max_token_threshold: Max tokens before truncation is triggered
-            truncate_token_target: Target tokens after truncation
-            min_essay_length: Minimum length in characters for a valid essay
+            model: Optional pre-loaded model to reuse.
+            tokenizer: Optional pre-loaded tokenizer to reuse.
+            prompt_template: Optional pre-loaded prompt template to reuse.
+            max_token_threshold: Max tokens before truncation is triggered.
+            truncate_token_target: Target tokens after truncation.
+            min_essay_length: Minimum length in characters for a valid essay.
+        Raises:
+            RuntimeError: If model or tokenizer fails to initialize.
         """
         self.max_token_threshold = max_token_threshold
         self.truncate_token_target = truncate_token_target
@@ -103,7 +113,13 @@ class DeepSeekHandler:
             raise RuntimeError(f"Failed to initialize model: {str(e)}")
         
     def process_text(self, text: str) -> None:
-        """Process input text, tokenize into sentences, and store as chunks."""
+        """
+        Process input text, tokenize into sentences, and store as chunks.
+        Args:
+            text: The input text to process.
+        Returns:
+            None. Updates self.text_chunks in place.
+        """
         stripped_text = text.strip()
         if not stripped_text:
             logger.warning("Empty or whitespace-only text provided to process_text")
@@ -466,7 +482,13 @@ This analysis of {topic} as a literary device demonstrates the inseparability of
         return self._filter_analysis(analysis)
 
     def _filter_analysis(self, analysis: str) -> str:
-        """Remove instruction lines from chunk analysis."""
+        """
+        Remove instruction lines from chunk analysis.
+        Args:
+            analysis: The chunk analysis string.
+        Returns:
+            The filtered analysis string with instructions removed.
+        """
         instruction_keywords = [
             "INSTRUCTIONS:", "Extract key", "Identify character", "Note literary",
             "Focus ONLY", "Format your", "Source Materials:", "TEXT EXCERPT:",
