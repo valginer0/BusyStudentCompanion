@@ -233,12 +233,7 @@ class DeepSeekHandler:
         # Analyze each chunk
         for chunk in self.text_chunks:
             analysis = self._analyze_chunk(chunk, topic, style, word_limit)
-            print(f"DEBUG: analysis for chunk='{chunk[:30]}': {analysis!r}")
             chunk_analyses.append(analysis)
-        print(f"DEBUG: chunk_analyses after loop: {chunk_analyses!r}")
-        # Additional debug: check if any analysis is None or not a string
-        for idx, a in enumerate(chunk_analyses):
-            print(f"DEBUG: chunk_analyses[{idx}] type={type(a)}, value={a!r}")
         
         # If no analyses were produced, raise an error
         if not chunk_analyses:
@@ -253,7 +248,6 @@ class DeepSeekHandler:
             combined_analysis = "\n\n".join(chunk_analyses)
             # Always truncate combined_analysis to match test expectation and ensure token safety
             combined_analysis = self._truncate_text(combined_analysis, self.truncate_token_target)
-            print(f"DEBUG: combined_analysis type={type(combined_analysis)}, value={combined_analysis!r}")
             
             # Format the prompt for essay generation
             prompt = self.prompt_template.format_essay_prompt(
@@ -263,12 +257,10 @@ class DeepSeekHandler:
                 analysis=combined_analysis,
                 citations=mla_citations
             )
-            print(f"DEBUG: essay_prompt: {prompt!r}")
             
             # Do the generation
             device = next(self.model.parameters()).device
             inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=4096).to(device)
-            print(f"DEBUG: inputs type={type(inputs)}, value={inputs}")
             
             logger.info("Generating full essay from analysis")
             
@@ -279,20 +271,17 @@ class DeepSeekHandler:
                     temperature=TEMPERATURE,
                     do_sample=True
                 )
-            print(f"DEBUG: essay_output: {outputs!r}")
             
             # Decode the model output
             response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-            print(f"DEBUG: essay after decode: {response!r}")
             
             # Try to extract just the essay part
             essay = self.prompt_template.extract_response(response)
-            print(f"DEBUG: essay after extract_response: {essay!r}")
             
             # Post-process the essay
             try:
                 logger.info("Filtering and cleaning essay")
-                print(f"DEBUG: essay before filtering: {essay!r}")
+                
                 # Define patterns to skip (instructions, etc.)
                 skip_patterns = [
                     r"(?i)essay:", r"(?i)essay on", 
@@ -372,26 +361,16 @@ class DeepSeekHandler:
                                 logger.info("Reconstructed essay into structured paragraphs")
                 
                 logger.info(f"After comprehensive filtering, essay starts with: {essay[:100] if essay else 'EMPTY'}...")
-                print(f"DEBUG: essay before return: {essay!r}")
             except Exception as e:
                 logger.error(f"Error during essay filtering: {str(e)}")
-                print(f"DEBUG: Exception during essay filtering: {e}")
                 raise RuntimeError(f"Essay filtering failed due to an internal error: {str(e)}")
-            
-            # Print the filtered essay for debugging
-            print("\n" + "="*50 + " FILTERED ESSAY " + "="*50)
-            print(essay)
-            print("="*120)
             
             # Add Works Cited if not already included
             if "Works Cited" not in essay and mla_citations:
                 essay += f"\n\n{citations_text}"
-                print(f"DEBUG: essay before final return: {essay!r}")
             return essay
         except Exception as e:
             logger.error(f"Error generating final essay: {str(e)}")
-            print(f"DEBUG: Exception generating final essay: {e}")
-            print(f"DEBUG: essay at exception: {locals().get('essay', 'NOT SET')!r}")
             raise
 
     def _generate_fallback_essay(self, topic: str, style: str, word_limit: int, reason: FallbackReason = FallbackReason.UNKNOWN) -> str:
