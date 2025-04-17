@@ -12,7 +12,7 @@ import nltk # Added for sentence tokenization
 import re
 from .chunk_analysis_manager import ChunkAnalysisManager
 from typing import Optional, List, Dict
-from .utils import truncate_text
+from .utils import truncate_text, filter_analysis
 
 logger = logging.getLogger(__name__)
 
@@ -259,29 +259,7 @@ This analysis of {topic} as a literary device demonstrates the inseparability of
         return self._filter_analysis(analysis)
 
     def _filter_analysis(self, analysis: str) -> str:
-        """
-        Remove instruction lines from chunk analysis.
-        Args:
-            analysis: The chunk analysis string.
-        Returns:
-            The filtered analysis string with instructions removed.
-        """
-        instruction_keywords = [
-            "INSTRUCTIONS:", "Extract key", "Identify character", "Note literary",
-            "Focus ONLY", "Format your", "Source Materials:", "TEXT EXCERPT:",
-            "social media", "data analysis", "YOUR ANALYSIS",
-            "do not repeat these instructions", "do not include these instructions",
-            "start directly with", "ESSAY", "do not"
-        ]
-        lines = analysis.split('\n')
-        filtered = []
-        for line in lines:
-            if any(keyword.lower() in line.lower() for keyword in instruction_keywords):
-                continue
-            if re.match(r'^\d+\.\s+(Extract|Identify|Note|Focus|Format)', line.strip()):
-                continue
-            filtered.append(line)
-        return '\n'.join(filtered)
+        return filter_analysis(analysis)
 
     def _truncate_text(self, text: str, target_words: int) -> str:
         """Truncate text to a target word count while preserving paragraph structure.
