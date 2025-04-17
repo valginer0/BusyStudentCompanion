@@ -6,6 +6,7 @@ import hashlib
 import tempfile
 
 from src.book_to_essay.model_handler import DeepSeekHandler, MODEL_NAME
+from src.book_to_essay.model_loader import load_model, load_tokenizer
 from src.book_to_essay.chunk_analysis_manager import ChunkAnalysisManager
 from src.book_to_essay.config import MAX_CHUNK_SIZE, MAX_CHUNKS_PER_ANALYSIS
 
@@ -30,21 +31,16 @@ def test_setup_handler():
     mock_model = MagicMock()
     mock_tokenizer = MagicMock()
 
-    # 2. Patch dependencies called during DeepSeekHandler.__init__
-    # Patching where they are looked up (in model_handler or factory)
-    with patch('src.book_to_essay.model_handler.AutoTokenizer.from_pretrained', return_value=mock_tokenizer), \
-         patch('src.book_to_essay.model_handler.AutoModelForCausalLM.from_pretrained', return_value=mock_model), \
-         patch('src.book_to_essay.prompts.factory.PromptTemplateFactory.create', return_value=mock_prompt_template):
-        # 3. Initialize the handler (should use mocks now)
-        handler = DeepSeekHandler(
-            model=mock_model,
-            tokenizer=mock_tokenizer,
-            prompt_template=mock_prompt_template,
-            max_token_threshold=10,      # very low for test
-            truncate_token_target=5,     # very low for test
-            min_essay_length=10,         # very low for test
-            chunk_manager=ChunkAnalysisManager()
-        )
+    # Directly initialize the handler with mocks (no patching needed)
+    handler = DeepSeekHandler(
+        model=mock_model,
+        tokenizer=mock_tokenizer,
+        prompt_template=mock_prompt_template,
+        max_token_threshold=10,      # very low for test
+        truncate_token_target=5,     # very low for test
+        min_essay_length=10,         # very low for test
+        chunk_manager=ChunkAnalysisManager()
+    )
 
     # 4. Manually assign the config object and mocks
     handler.config = mock_config
@@ -59,32 +55,19 @@ def test_setup_handler():
 
 @pytest.fixture
 def handler():
-    """Fixture to create a DeepSeekHandler instance with mocked __init__."""
-    # Use a temporary directory for cache that gets cleaned up
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Temporarily override MODEL_CACHE_DIR
-        with patch('src.book_to_essay.model_handler.MODEL_CACHE_DIR', tmpdir):
-            # Mock the model and tokenizer loading to avoid actual downloads/loading
-            mock_model_instance = MagicMock()
-            mock_model_instance.eval = MagicMock() # Ensure the mock model has an eval method
-            mock_tokenizer_instance = MagicMock()
-            mock_prompt_instance = MagicMock()
-
-            with patch('src.book_to_essay.model_handler.AutoModelForCausalLM.from_pretrained', return_value=mock_model_instance) as mock_model_load, \
-                 patch('src.book_to_essay.model_handler.AutoTokenizer.from_pretrained', return_value=mock_tokenizer_instance) as mock_tokenizer_load, \
-                 patch('src.book_to_essay.model_handler.PromptTemplateFactory.create', return_value=mock_prompt_instance) as mock_prompt_factory:
-
-                # Mock __init__ to avoid actual model loading during testing simple methods
-                with patch('src.book_to_essay.model_handler.DeepSeekHandler.__init__', return_value=None) as mock_init:
-                    # Pass dummy model/tokenizer to satisfy __init__ signature if needed,
-                    # but they won't be used if mocking is correct.
-                    instance = DeepSeekHandler()
-                    instance.model_name = MODEL_NAME
-                    # Use a real or mocked chunk_manager as required
-                    instance.chunk_manager = ChunkAnalysisManager()
-                    # Manually initialize attributes normally set by __init__ that process_text might rely on
-                    instance.text_chunks = []
-                    yield instance
+    """Fixture to create a DeepSeekHandler instance with mocked dependencies."""
+    mock_model_instance = MagicMock()
+    mock_model_instance.eval = MagicMock()
+    mock_tokenizer_instance = MagicMock()
+    mock_prompt_instance = MagicMock()
+    handler = DeepSeekHandler(
+        model=mock_model_instance,
+        tokenizer=mock_tokenizer_instance,
+        prompt_template=mock_prompt_instance,
+        chunk_manager=ChunkAnalysisManager()
+    )
+    handler.text_chunks = []
+    return handler
 
 
 class FakeTensorDict(dict):

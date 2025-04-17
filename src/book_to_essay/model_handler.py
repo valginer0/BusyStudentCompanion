@@ -1,14 +1,7 @@
 """Handler for loading and managing the language model."""
 import logging
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+from .model_loader import load_tokenizer, load_model
 import torch
-import torch.quantization
-import re
-import os
-import pickle
-import hashlib
-from typing import List, Dict, Optional, Tuple
-from pathlib import Path
 from .config import (
     MODEL_NAME, MODEL_CACHE_DIR, MAX_LENGTH, TEMPERATURE, 
     MAX_CHUNK_SIZE, MAX_CHUNKS_PER_ANALYSIS, QUANT_CONFIG
@@ -16,7 +9,9 @@ from .config import (
 from .prompts.factory import PromptTemplateFactory
 from .fallback import FallbackReason
 import nltk # Added for sentence tokenization
+import re
 from .chunk_analysis_manager import ChunkAnalysisManager
+from typing import Optional, List, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +20,8 @@ class DeepSeekHandler:
     
     def __init__(
         self,
-        model: Optional[object] = None,
-        tokenizer: Optional[object] = None,
+        model: object,
+        tokenizer: object,
         prompt_template: Optional[object] = None,
         max_token_threshold: int = 4000,
         truncate_token_target: int = 3500,
@@ -36,8 +31,8 @@ class DeepSeekHandler:
         """
         Initialize the model handler with model, tokenizer, and prompt template.
         Args:
-            model: Optional pre-loaded model to reuse.
-            tokenizer: Optional pre-loaded tokenizer to reuse.
+            model: Pre-loaded model to reuse.
+            tokenizer: Pre-loaded tokenizer to reuse.
             prompt_template: Optional pre-loaded prompt template to reuse.
             max_token_threshold: Max tokens before truncation is triggered.
             truncate_token_target: Target tokens after truncation.
@@ -50,68 +45,24 @@ class DeepSeekHandler:
         self.truncate_token_target = truncate_token_target
         self.min_essay_length = min_essay_length
         
-        try:
-            # Initialize chunk analysis manager
-            self.chunk_manager = chunk_manager or ChunkAnalysisManager()
-            # Initialize text_chunks
-            self.text_chunks = []
-            
-            # If model and tokenizer are provided, reuse them
-            if model is not None and tokenizer is not None:
-                logger.info("Reusing existing model and tokenizer")
-                self.model = model
-                self.tokenizer = tokenizer
-                self.prompt_template = prompt_template or PromptTemplateFactory.create(MODEL_NAME)
-                return
-                
-            logger.info(f"Loading model and tokenizer: {MODEL_NAME}")
-            
-            # Load tokenizer
-            logger.info("Loading tokenizer...")
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                MODEL_NAME,
-                cache_dir=MODEL_CACHE_DIR
-            )
-            
-            # Load model with quantization config
-            logger.info("Loading model with quantization config...")
-            self.model = AutoModelForCausalLM.from_pretrained(
-                MODEL_NAME,
-                cache_dir=MODEL_CACHE_DIR,
-                **QUANT_CONFIG.get("load_config", {})
-            )
-            
-            # Apply post-load quantization if specified
-            if QUANT_CONFIG.get("post_load_quantize", False):
-                logger.info("Applying post-load quantization...")
-                config = QUANT_CONFIG.get("post_load_quantize", {})
-                if config:
-                    # Apply dynamic quantization for CPU
-                    if QUANT_CONFIG.get("method") == "8bit_cpu":
-                        logger.info("Applying dynamic quantization for CPU...")
-                        self.model = torch.quantization.quantize_dynamic(
-                            self.model, 
-                            {torch.nn.Linear}, 
-                            dtype=torch.qint8
-                        )
-            
-            # Initialize prompt template based on model
-            if prompt_template is None:
-                self.prompt_template = PromptTemplateFactory.create(MODEL_NAME)
-            else:
-                self.prompt_template = prompt_template
-            logger.info(f"Using prompt template for model type: {self.prompt_template.__class__.__name__}")
-            
-            logger.info("Model loaded successfully")
-            
-            # Set model to evaluation mode for inference
-            self.model.eval()
-            # Disable gradient calculation for inference
-            torch.set_grad_enabled(False)
-            
-        except Exception as e:
-            logger.error(f"Error initializing model: {str(e)}")
-            raise RuntimeError(f"Failed to initialize model: {str(e)}")
+        # Initialize chunk analysis manager
+        self.chunk_manager = chunk_manager or ChunkAnalysisManager()
+        # Initialize text_chunks
+        self.text_chunks = []
+
+        if model is None or tokenizer is None:
+            raise ValueError("ModelHandler requires model and tokenizer to be provided. Use model_loader.py to load them.")
+
+        self.model = model
+        self.tokenizer = tokenizer
+        self.prompt_template = prompt_template or PromptTemplateFactory.create(MODEL_NAME)
+        
+        logger.info("Model loaded successfully")
+        
+        # Set model to evaluation mode for inference
+        self.model.eval()
+        # Disable gradient calculation for inference
+        torch.set_grad_enabled(False)
         
     def process_text(self, text: str) -> None:
         """
