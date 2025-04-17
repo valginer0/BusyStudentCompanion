@@ -1,11 +1,11 @@
 """Handles chunk splitting, analysis, and caching for essay generation."""
 import os
 import pickle
-import hashlib
 from pathlib import Path
 from typing import List, Optional
 import logging
 from .config import MAX_CHUNK_SIZE, MAX_CHUNKS_PER_ANALYSIS, MODEL_CACHE_DIR
+from .chunk_utilities import get_chunk_cache_key, get_chunk_cache_path
 import nltk
 
 logger = logging.getLogger(__name__)
@@ -65,11 +65,10 @@ class ChunkAnalysisManager:
         return chunks
 
     def get_chunk_cache_key(self, chunk: str, topic: str, style: str, word_limit: int) -> str:
-        key_data = f"{chunk}|{topic}|{style}|{word_limit}"
-        return hashlib.md5(key_data.encode()).hexdigest()
+        return get_chunk_cache_key(chunk, topic, style, word_limit)
 
     def get_chunk_cache_path(self, cache_key: str) -> Path:
-        return self.chunk_cache_dir / f"{cache_key}.pkl"
+        return get_chunk_cache_path(cache_key, self.chunk_cache_dir)
 
     def get_cached_chunk_analysis(self, chunk: str, topic: str, style: str, word_limit: int) -> Optional[str]:
         """
