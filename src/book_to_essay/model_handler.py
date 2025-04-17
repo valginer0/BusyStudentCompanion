@@ -12,6 +12,7 @@ import nltk # Added for sentence tokenization
 import re
 from .chunk_analysis_manager import ChunkAnalysisManager
 from typing import Optional, List, Dict
+from .utils import truncate_text
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +153,7 @@ class DeepSeekHandler:
     def _postprocess_essay(self, essay, word_limit):
         # Truncate if necessary
         if len(essay.split()) > word_limit:
-            essay = self._truncate_text(essay, word_limit)
+            essay = truncate_text(essay, word_limit)
         # Structure paragraphs (basic)
         paragraphs = essay.split('\n\n')
         reconstructed = []
@@ -284,31 +285,13 @@ This analysis of {topic} as a literary device demonstrates the inseparability of
 
     def _truncate_text(self, text: str, target_words: int) -> str:
         """Truncate text to a target word count while preserving paragraph structure.
-        
         Args:
             text: The text to truncate
             target_words: Target number of words
-            
         Returns:
             Truncated text
         """
-        words = text.split()
-        
-        if len(words) <= target_words:
-            return text
-        
-        # If we need significant truncation, preserve first 60% and last 40%
-        if len(words) > target_words * 1.5:
-            first_chunk_size = int(target_words * 0.6)
-            last_chunk_size = target_words - first_chunk_size
-            
-            first_chunk = ' '.join(words[:first_chunk_size])
-            last_chunk = ' '.join(words[-last_chunk_size:])
-            
-            return f"{first_chunk}\n\n[...]\n\n{last_chunk}"
-        
-        # For minor truncation, just take the first N words
-        return ' '.join(words[:target_words])
+        return truncate_text(text, target_words)
 
     def _truncate_combined_analysis(self, combined_analysis: str) -> str:
         return self._truncate_text(combined_analysis, self.truncate_token_target)
