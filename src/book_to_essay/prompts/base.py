@@ -1,22 +1,18 @@
 """Base prompt template class for language models."""
 from abc import ABC, abstractmethod
 from typing import List, Dict, Optional
+from src.book_to_essay.prompts.config import PromptConfig
 
 
 class PromptTemplate(ABC):
     """Base class for prompt templates for different language models."""
     
     @abstractmethod
-    def format_chunk_analysis_prompt(self, 
-                                    chunk: str, 
-                                    topic: str, 
-                                    source_info: Optional[str] = None) -> str:
+    def format_chunk_analysis_prompt(self, config: PromptConfig) -> str:
         """Format a prompt for analyzing a chunk of text.
         
         Args:
-            chunk: The text chunk to analyze
-            topic: The topic to focus on
-            source_info: Optional information about the source
+            config: PromptConfig object with all relevant fields
             
         Returns:
             A formatted prompt string
@@ -24,20 +20,11 @@ class PromptTemplate(ABC):
         pass
     
     @abstractmethod
-    def format_essay_generation_prompt(self, 
-                                      analysis_text: str, 
-                                      topic: str, 
-                                      style: str,
-                                      word_limit: int,
-                                      source_info: Optional[str] = None) -> str:
+    def format_essay_generation_prompt(self, config: PromptConfig) -> str:
         """Format a prompt for generating an essay.
         
         Args:
-            analysis_text: The text analysis to use for essay generation
-            topic: The essay topic
-            style: The writing style
-            word_limit: The target word count
-            source_info: Optional information about the source
+            config: PromptConfig object with all relevant fields
             
         Returns:
             A formatted prompt string
@@ -45,19 +32,12 @@ class PromptTemplate(ABC):
         pass
     
     @abstractmethod
-    def format_fallback_prompt(self,
-                              topic: str,
-                              style: str,
-                              word_limit: int) -> str:
-        """Format a fallback prompt for simpler essay generation.
-        
-        Args:
-            topic: The essay topic
-            style: The writing style
-            word_limit: The target word count
-            
-        Returns:
-            A formatted prompt string
+    def format_fallback_prompt(self, config: PromptConfig) -> str:
+        """
+        Format a fallback prompt for simpler essay generation.
+
+        NOTE: This method is retained for reference and for mapping error codes/messages.
+        It should NOT be used to generate fallback essays. All essay generation failures should raise explicit errors instead of producing fallback content.
         """
         pass
     

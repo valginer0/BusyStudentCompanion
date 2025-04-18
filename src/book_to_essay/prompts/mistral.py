@@ -1,86 +1,66 @@
 """Prompt templates for Mistral models."""
 from typing import List, Dict, Optional
 from src.book_to_essay.prompts.base import PromptTemplate
+from src.book_to_essay.prompts.config import PromptConfig
 
 
 class MistralPromptTemplate(PromptTemplate):
     """Prompt templates for Mistral language models."""
     
-    def format_chunk_analysis_prompt(self, 
-                                    chunk: str, 
-                                    topic: str, 
-                                    source_info: Optional[str] = None) -> str:
+    def format_chunk_analysis_prompt(self, config: PromptConfig) -> str:
         """Format a prompt for analyzing a chunk of text for Mistral model.
         
         Args:
-            chunk: The text chunk to analyze
-            topic: The topic to focus on
-            source_info: Optional information about the source
+            config: PromptConfig object with fields: chunk, topic, source_info
             
         Returns:
             A formatted prompt string
         """
-        prompt = f"""<s>[INST] You are a literary scholar analyzing literature. Analyze the following text excerpt and extract content related to '{topic}'.
+        prompt = f"""<s>[INST] You are a literary scholar analyzing literature. Analyze the following text excerpt and extract content related to '{config.topic}'.
 
 Text to analyze:
 ```
-{chunk}
+{config.chunk}
 ```
 
 Analyze this text by:
-1. Identifying key quotes related to '{topic}'
-2. Analyzing themes and motifs related to '{topic}'
-3. Examining character development related to '{topic}'
+1. Identifying key quotes related to '{config.topic}'
+2. Analyzing themes and motifs related to '{config.topic}'
+3. Examining character development related to '{config.topic}'
 
 IMPORTANT: Provide ONLY your analysis. Start directly with your substantive analysis. Don't include labels, headers, or refer to yourself. [/INST]"""
 
         return prompt
     
-    def format_essay_generation_prompt(self, 
-                                      analysis_text: str, 
-                                      topic: str, 
-                                      style: str,
-                                      word_limit: int,
-                                      source_info: Optional[str] = None) -> str:
+    def format_essay_generation_prompt(self, config: PromptConfig) -> str:
         """Format a prompt for generating an essay with Mistral model.
         
         Args:
-            analysis_text: The text analysis to use for essay generation
-            topic: The essay topic
-            style: The writing style
-            word_limit: The target word count
-            source_info: Optional information about the source
+            config: PromptConfig object with fields: analysis_text, topic, style, word_limit, source_info
             
         Returns:
             A formatted prompt string
         """
-        prompt = f"""<s>[INST] Write a well-structured {style} essay about '{topic}' using the following analysis as reference:
+        prompt = f"""<s>[INST] Write a well-structured {config.style} essay about '{config.topic}' using the following analysis as reference:
 
 ```
-{analysis_text}
+{config.analysis_text}
 ```
 
-Your essay should be approximately {word_limit} words, use MLA format, include textual evidence, and have a clear thesis statement.
+Your essay should be approximately {config.word_limit} words, use MLA format, include textual evidence, and have a clear thesis statement.
 
 Write a complete essay with introduction, body paragraphs, and conclusion. Start directly with the essay text, with no headers or meta-commentary. [/INST]"""
 
         return prompt
     
-    def format_fallback_prompt(self,
-                              topic: str,
-                              style: str,
-                              word_limit: int) -> str:
-        """Format a fallback prompt for simpler essay generation with Mistral model.
-        
-        Args:
-            topic: The essay topic
-            style: The writing style
-            word_limit: The target word count
-            
-        Returns:
-            A formatted prompt string
+    def format_fallback_prompt(self, config: PromptConfig) -> str:
         """
-        prompt = f"""<s>[INST] Write a {word_limit}-word {style} essay analyzing '{topic}' in literature. Use MLA format and include textual evidence. Begin directly with your essay text. [/INST]"""
+        Format a fallback prompt for simpler essay generation with Mistral model.
+
+        NOTE: This method is retained for reference and for error text mapping only.
+        It should NOT be used to generate fallback essays. All essay generation failures should raise explicit errors instead of producing fallback content.
+        """
+        prompt = f"""<s>[INST] Write a {config.word_limit}-word {config.style} essay analyzing '{config.topic}' in literature. Use MLA format and include textual evidence. Begin directly with your essay text. [/INST]"""
         
         return prompt
     

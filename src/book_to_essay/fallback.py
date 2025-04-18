@@ -4,7 +4,13 @@ from enum import Enum, auto
 
 
 class FallbackReason(Enum):
-    """Enumeration of possible reasons for fallback essay generation."""
+    """
+    Enumeration of possible reasons for fallback essay generation.
+
+    NOTE: FallbackReason is no longer used to trigger fallback essay generation.
+    It is retained for reference, error code mapping, and for generating user-facing error messages.
+    Do not use this enum to trigger fallback essays—raise explicit errors instead.
+    """
     
     # Input-related reasons
     NO_TEXT_LOADED = auto()              # No text chunks loaded before generation
