@@ -11,7 +11,7 @@ class DeepSeekPromptTemplate(PromptTemplate):
         """Format a prompt for analyzing a chunk of text for DeepSeek model.
         
         Args:
-            config: PromptConfig object with fields: chunk, topic, source_info
+            config: PromptConfig object with fields: analysis_text, topic, source_info
             
         Returns:
             A formatted prompt string
@@ -19,7 +19,7 @@ class DeepSeekPromptTemplate(PromptTemplate):
         prompt = f"""<s>[INST] You are a literary scholar analyzing literature. Your task is to extract and analyze material from this text excerpt that relates to '{config.topic}'. 
 
 TEXT TO ANALYZE:
-{config.chunk}
+{config.analysis_text}
 
 YOUR TASK:
 - Identify key quotes that illustrate '{config.topic}'

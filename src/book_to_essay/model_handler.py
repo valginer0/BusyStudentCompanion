@@ -15,6 +15,8 @@ from typing import Optional, List, Dict
 from .utils import truncate_text, filter_analysis, prepare_citations, format_essay_from_analyses, postprocess_essay
 from .utils import truncate_text, filter_analysis, prepare_citations, format_essay_from_analyses
 from src.book_to_essay.error_utils import log_and_raise
+from src.book_to_essay.prompts.factory import get_prompt_template
+from src.book_to_essay.prompts.config import PromptConfig
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +132,13 @@ class DeepSeekHandler:
     # Helpers for chunk analysis, extracted to simplify _analyze_chunk
     def _perform_chunk_analysis(self, chunk: str, topic: str, style: str, word_limit: int) -> str:
         """Generate analysis for a chunk (without cache)."""
-        prompt = self.prompt_template.format_chunk_analysis_prompt(chunk=chunk, topic=topic)
+        config = PromptConfig(
+            analysis_text=chunk,
+            topic=topic,
+            style=style,
+            word_limit=word_limit
+        )
+        prompt = self.prompt_template.format_chunk_analysis_prompt(config)
         device = next(self.model.parameters()).device
         inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=4096).to(device)
         with torch.no_grad():
