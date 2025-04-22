@@ -69,6 +69,26 @@ rm -f ~/.cache/busy_student_companion/models/chunk_cache/*.pkl
 
 **Note**: If changes to the essay generation or filtering logic do not appear to take effect, it is likely because the system is using cached results. Always clear the chunk cache before testing.
 
+## Book/Text File Metadata Requirements
+
+For best results and robust MLA citation extraction, each input text file should include the following metadata at the top of the file:
+
+```
+Title: <Book Title>
+Author: <Author Name>
+```
+
+Example:
+```
+Title: Romeo and Juliet
+Author: William Shakespeare
+```
+
+- The tool will extract `Title` and `Author` from the first 40 lines of the file.
+- If not found, it will fallback to parsing the filename (format: `Author - Title[ - Extra].ext`).
+
+**Supported formats:** `.txt`, `.pdf`, `.epub`
+
 ## Usage
 
 1. Start the web interface:
@@ -80,6 +100,22 @@ PYTHONPATH=$PYTHONPATH:$(pwd) streamlit run src/book_to_essay/streamlit_app.py
 2. Upload your book file (PDF, EPUB, or DOCX format)
 3. The AI will analyze the content and generate an essay
 4. Review and download the generated essay
+
+## Running Scripts (WSL Ubuntu on Windows 11)
+
+Use the following command pattern to run scripts (from Windows):
+
+```
+wsl bash -c 'cd /home/val/projects/BusyStudentCompanion; source .venv/bin/activate; PYTHONPATH=$PYTHONPATH:/home/val/projects/BusyStudentCompanion pytest tests'
+```
+
+Example:
+```
+wsl bash -c 'cd /home/val/projects/BusyStudentCompanion; source .venv/bin/activate; PYTHONPATH=$PYTHONPATH:/home/val/projects/BusyStudentCompanion python3 test_essay_generation.py'
+```
+
+- Use UNC paths (e.g., `\\wsl$\\Ubuntu\\home\\val\\projects\\BusyStudentCompanion\\...`) for file/codebase operations.
+- Use WSL bash commands for running scripts.
 
 ## Project Structure
 

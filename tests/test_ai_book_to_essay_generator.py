@@ -437,7 +437,7 @@ def test_load_file_cache_hit(mocker, tmp_path):
     """Test that loading the same file twice results in a cache hit on the second call."""
     generator = AIBookEssayGenerator()
     file_path = tmp_path / "TestAuthor - TestTitle.txt"
-    file_content = "This is the content to be cached."
+    file_content = "Title: TestTitle\nAuthor: TestAuthor\nThis is the content to be cached."
     file_path.write_text(file_content, encoding='utf-8')
 
     # Mock CacheManager methods
@@ -453,7 +453,7 @@ def test_load_file_cache_hit(mocker, tmp_path):
     mock_get_cache.assert_called_once_with(str(file_path))
     expected_cached_data = {
         "content": file_content,
-        "source": {"path": str(file_path), "name": "TestAuthor - TestTitle.txt", "type": "txt"}
+        "source": {"path": str(file_path), "name": "TestAuthor - TestTitle.txt", "type": "txt", "author": "TestAuthor", "title": "TestTitle"}
     }
     mock_cache_content.assert_called_once_with(str(file_path), expected_cached_data)
     assert generator.content == file_content + "\n"

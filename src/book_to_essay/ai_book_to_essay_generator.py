@@ -38,15 +38,25 @@ class AIBookEssayGenerator:
                 raise RuntimeError(f"Failed to initialize model: {str(e)}")
         return self._model
 
+    def extract_metadata_from_text(self, text):
+        """Extract Author and Title from the first 40 lines of the text, fallback to None if not found."""
+        title, author = None, None
+        for line in text.splitlines()[:40]:
+            if line.lower().startswith('title:'):
+                title = line.split(':', 1)[1].strip()
+            elif line.lower().startswith('author:'):
+                author = line.split(':', 1)[1].strip()
+        return author, title
+
     def _process_file_content(self, file_path: str, processor_func) -> Dict[str, Any]:
-        """Process file content with caching."""
+        """Process file content with caching and extract metadata from content or filename."""
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
 
         # Validate file extension and citation filename
         validate_file_extension(file_path)
         validate_filename_for_citation(file_path)
-            
+        
         # Check cache first
         cached_content = self.cache_manager.get_cached_content(file_path)
         if cached_content is not None:
@@ -58,20 +68,32 @@ class AIBookEssayGenerator:
         content = processor_func(file_path)
         if not content:
             raise ValueError(f"No content could be extracted from {file_path}")
-            
+
+        # Try to extract metadata from content
+        author, title = self.extract_metadata_from_text(content)
+        # Fallback: parse from filename if not found in content
+        if not (author and title):
+            # Parse filename: "Author - Title - Extra.txt" or "Author - Title.txt"
+            base = os.path.basename(file_path)
+            base = base.rsplit('.', 1)[0]
+            import re
+            match = re.match(r'^(.*?) - (.*?)(?: - .*)?$', base)
+            if match:
+                author = author or match.group(1).strip()
+                title = title or match.group(2).strip()
         source = {
             'path': file_path,
             'name': os.path.basename(file_path),
-            'type': os.path.splitext(file_path)[1][1:]
+            'type': os.path.splitext(file_path)[1][1:],
+            'author': author,
+            'title': title
         }
-        
         # Cache the processed content
         cache_data = {
             "content": content,
             "source": source
         }
         self.cache_manager.cache_content(file_path, cache_data)
-        
         # Update current state
         self.content += content + "\n"
         self.sources.append(source)
