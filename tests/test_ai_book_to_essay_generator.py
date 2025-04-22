@@ -170,8 +170,13 @@ def test_process_txt_file_success(mocker, temp_cache_dir):
 
     # Assertions
     mock_get_cache.assert_called_once_with(file_path)
-    # Assert that the handler's process_text was called with the content
-    mock_handler_instance.process_text.assert_called_once_with(sample_txt_content)
+    # Assert that the handler's process_text was called twice: with content, and with content+'\n'
+    from unittest.mock import call
+    mock_handler_instance.process_text.assert_has_calls([
+        call(sample_txt_content),
+        call(sample_txt_content + "\n")
+    ])
+    assert mock_handler_instance.process_text.call_count == 2
     # Assert cache was updated
     # We need to check the arguments cache_content was called with
     mock_cache_content.assert_called_once()
