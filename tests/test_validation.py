@@ -1,5 +1,6 @@
 """Unit tests for validation utilities."""
 import pytest
+import warnings
 from src.book_to_essay.validation import (
     validate_word_count,
     validate_file_extension,
@@ -42,13 +43,32 @@ def test_validate_style_invalid():
 
 # --- Filename for Citation ---
 def test_validate_filename_for_citation_valid():
-    for fname in ["Author - Title.txt", "Doe - MyBook.pdf", "Smith - Epic.epub"]:
-        validate_filename_for_citation(fname)
+    import warnings
+    valid_names = [
+        "Shakespeare - Hamlet.txt",
+        "Jane Austen - Pride and Prejudice.pdf",
+        "Author - Title.epub",
+    ]
+    for fname in valid_names:
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            validate_filename_for_citation(fname)
+            # Should not warn for valid names
+            assert not w, f"Unexpected warning for valid filename: {fname}"
+
 
 def test_validate_filename_for_citation_invalid():
-    with pytest.raises(ValueError):
-        validate_filename_for_citation("badname.txt")
-    with pytest.raises(ValueError):
-        validate_filename_for_citation("NoDashHere.pdf")
-    with pytest.raises(ValueError):
-        validate_filename_for_citation(" - MissingAuthor.epub")
+    import warnings
+    invalid_names = [
+        "badname.txt",
+        "NoDashHere.pdf",
+        " - MissingAuthor.epub",
+    ]
+    for fname in invalid_names:
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            validate_filename_for_citation(fname)
+            # Should warn for invalid names
+            assert w, f"Expected warning for invalid filename: {fname}"
+            assert issubclass(w[-1].category, UserWarning)
+            assert "does not match 'Author - Title.ext'" in str(w[-1].message)

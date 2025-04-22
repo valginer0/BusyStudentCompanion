@@ -99,6 +99,13 @@ class AIBookEssayGenerator:
                 log_and_raise(f"Unexpected error opening or processing TXT file {file_path}", e)
         
         self._process_file_content(file_path, process_txt)
+        logger.debug(f"Loaded content length: {len(self.content)}")
+        if hasattr(self, 'model') and hasattr(self.model, 'process_text'):
+            self.model.process_text(self.content)
+            if hasattr(self.model, 'text_chunks'):
+                logger.debug(f"Number of text_chunks after process_text: {len(self.model.text_chunks)}")
+            else:
+                logger.debug("Model has no text_chunks attribute after process_text.")
 
     def load_pdf_file(self, file_path: str):
         """Load content from a PDF file with caching."""

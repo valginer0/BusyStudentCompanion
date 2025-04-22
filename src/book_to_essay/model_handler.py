@@ -12,8 +12,7 @@ import nltk # Added for sentence tokenization
 import re
 from .chunk_analysis_manager import ChunkAnalysisManager
 from typing import Optional, List, Dict
-from .utils import truncate_text, filter_analysis, prepare_citations, format_essay_from_analyses, postprocess_essay
-from .utils import truncate_text, filter_analysis, prepare_citations, format_essay_from_analyses
+from .utils import truncate_text, filter_analysis, prepare_citations, format_essay_from_analyses, postprocess_essay, DEFAULT_PARAGRAPH_WORDS
 from src.book_to_essay.error_utils import log_and_raise
 from src.book_to_essay.prompts.config import PromptConfig
 
@@ -92,7 +91,7 @@ class DeepSeekHandler:
         try:
             analyses = self._collect_chunk_analyses(topic, style, word_limit)
             citations, citations_text = self._prepare_citations(sources)
-            essay = self.prompt_template.format_essay_from_analyses(analyses, citations_text, word_limit, style)
+            essay = format_essay_from_analyses(analyses, citations_text, word_limit, style)
             essay = self._postprocess_essay(essay, word_limit)
         except Exception as e:
             log_and_raise("Error during essay generation", e, RuntimeError)
@@ -117,7 +116,7 @@ class DeepSeekHandler:
         return format_essay_from_analyses(analyses, citations_text, word_limit, style)
 
     def _postprocess_essay(self, essay, word_limit):
-        return postprocess_essay(essay, word_limit)
+        return postprocess_essay(essay, word_limit, paragraph_words=DEFAULT_PARAGRAPH_WORDS)
 
     def _analyze_chunk(self, chunk: str, topic: str, style: str, word_limit: int) -> str:
         """Analyze a text chunk for relevance to the topic, using chunk manager for caching."""

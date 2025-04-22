@@ -1,3 +1,5 @@
+DEFAULT_PARAGRAPH_WORDS = 120
+
 def truncate_text(text: str, target_words: int) -> str:
     """Truncate text to a target word count while preserving paragraph structure.
     Args:
@@ -83,9 +85,9 @@ def format_essay_from_analyses(analyses, citations_text, word_limit, style):
         essay += f"\n\nWorks Cited:\n{citations_text}"
     return essay
 
-def postprocess_essay(essay: str, word_limit: int) -> str:
+def postprocess_essay(essay: str, word_limit: int, paragraph_words: int = DEFAULT_PARAGRAPH_WORDS) -> str:
     """
-    Truncate essay to word_limit and structure into paragraphs of ~120 words.
+    Truncate essay to word_limit and structure into paragraphs of ~paragraph_words words.
     """
     if len(essay.split()) > word_limit:
         essay = truncate_text(essay, word_limit)
@@ -95,7 +97,7 @@ def postprocess_essay(essay: str, word_limit: int) -> str:
     for para in paragraphs:
         if para.strip():
             current.append(para.strip())
-            if len(' '.join(current).split()) > 120:
+            if len(' '.join(current).split()) > paragraph_words:
                 reconstructed.append(' '.join(current))
                 current = []
     if current:

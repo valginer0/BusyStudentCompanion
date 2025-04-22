@@ -27,7 +27,12 @@ def validate_style(style: str):
 def validate_filename_for_citation(filename: str):
     # Should match 'Author - Title.ext'
     base = os.path.splitext(os.path.basename(filename))[0]
+    # Only warn if the pattern does not match, do not raise
     if not re.match(r"^.+\s-\s.+$", base):
-        raise ValueError(
-            f"Filename '{filename}' does not match required format 'Author - Title.ext' for citation extraction."
+        import warnings
+        warnings.warn(
+            f"Filename '{filename}' does not match 'Author - Title.ext'. Citation extraction may be less accurate.",
+            UserWarning
         )
+    # Optionally, return None or metadata if you want to extract when possible
+    # else: extract author/title if needed

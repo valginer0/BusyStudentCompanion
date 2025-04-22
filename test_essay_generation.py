@@ -28,7 +28,7 @@ def main():
     test_file = os.path.join("test_data", "RomeoAndJulietFullTxt.txt")
     if USE_SMALL_TEST:
         # Use a smaller test file if available
-        small_test_file = os.path.join("test_data", "RomeoAndJulietExcerpt.txt")
+        small_test_file = os.path.join("test_data", "Shakespeare - Romeo and Juliet.txt")
         if os.path.exists(small_test_file):
             test_file = small_test_file
             logger.info(f"Using smaller test file for faster testing: {small_test_file}")

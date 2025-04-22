@@ -230,68 +230,65 @@ class TestDeepSeekHandler:
         mock_logger,           # Only logger mock from decorator remains
         test_setup_handler    # Inject the fixture result
     ):
-        """Tests the basic successful flow of generate_essay, including truncation."""
+        """Tests the basic successful flow of generate_essay, including truncation and paragraph merging logic."""
         handler = test_setup_handler
 
         test_topic = "The Impact of AI"
         test_limit = 150
         test_style = "Persuasive"
-        mock_text_chunks = ["Chunk 1 content.", "Chunk 2 content."]
-        handler.text_chunks = mock_text_chunks
-        handler.min_essay_length = 0
         mock_analyses = ["word " * 6, "word " * 6]
-        combined_analysis = "\n\n".join(mock_analyses)
-
-        # Patch analyze_chunk to return the mock analyses in order
+        handler.text_chunks = ["Chunk 1 content.", "Chunk 2 content."]
+        handler.min_essay_length = 0
         handler._analyze_chunk = MagicMock(side_effect=mock_analyses)
-        handler.chunk_manager.get_cached_chunk_analysis = MagicMock(return_value=None)
-        handler.chunk_manager.cache_chunk_analysis = MagicMock()
-        handler._truncate_text = MagicMock(return_value=combined_analysis)
-
-        # Ensure prompt_template is a MagicMock and returns a long, safe essay
-        handler.prompt_template = MagicMock()
-        safe_essay = (
-            "This is a long, detailed essay body that should not be filtered out or considered empty by any logic. "
-            "It contains many sentences and does not start with any filtering pattern. "
-            "The essay discusses the impact of AI in modern society, covering various aspects such as technology, ethics, and employment. "
-            "Furthermore, it includes analysis, evidence, and a clear thesis statement. "
-            "Conclusion: AI will continue to shape our world in profound ways."
-        )
-        handler.prompt_template.format_essay_prompt = MagicMock(side_effect=lambda **kwargs: combined_analysis)
-        handler.prompt_template.extract_response = MagicMock(return_value=safe_essay)
-        handler.prompt_template.format_essay_from_analyses = MagicMock(return_value=safe_essay)
-
-        # Ensure tokenizer and model are mocks, and model.generate returns a non-empty list
-        handler.tokenizer = MagicMock()
-        handler.model = MagicMock()
-        handler.model.parameters.side_effect = lambda: iter([MagicMock(device="cpu")])
+        handler._filter_analysis = lambda x: x  # No-op filter
         handler.model.generate.return_value = ["essay result"]
-
         handler.config.MIN_ESSAY_LENGTH_THRESHOLD = 0  # Ensure no minimum length check
-
-        print(f"DEBUG: extract_response mock will return: {safe_essay}")
-
-        # Execute and assert
+        from src.book_to_essay.utils import DEFAULT_PARAGRAPH_WORDS
+        print(f"DEBUG: extract_response mock will return: {mock_analyses}")
+        # Test case 1: total words <= DEFAULT_PARAGRAPH_WORDS (should merge into one paragraph)
         try:
             result = handler.generate_essay(topic=test_topic, word_limit=test_limit, style=test_style)
             print(f"DEBUG: generate_essay returned: {result}")
+            expected_essay = (" ".join([s.strip() for s in mock_analyses])).strip()
+            assert result == expected_essay
         except Exception as e:
             print(f"TEST DEBUG: Exception during essay generation: {e}")
             raise
 
-        # Remove assertion for _truncate_text since it is not called in this mock path
-        # handler._truncate_text.assert_called_once_with(combined_analysis, handler.truncate_token_target)
+    @patch('src.book_to_essay.model_handler.logger')
+    def test_generate_essay_paragraph_split(
+        self,
+        mock_logger,
+        test_setup_handler
+    ):
+        """Tests essay generation when total words > DEFAULT_PARAGRAPH_WORDS (should merge paragraphs appropriately)."""
+        handler = test_setup_handler
+        test_topic = "The Impact of AI"
+        test_limit = 200
+        test_style = "Persuasive"
+        from src.book_to_essay.utils import DEFAULT_PARAGRAPH_WORDS, postprocess_essay
+        # Create analyses so that total words > DEFAULT_PARAGRAPH_WORDS
+        words_per_chunk = DEFAULT_PARAGRAPH_WORDS // 2 + 1
+        mock_analyses = ["word " * words_per_chunk, "word " * words_per_chunk]
+        handler.text_chunks = ["Chunk 1 content.", "Chunk 2 content."]
+        handler.min_essay_length = 0
+        handler._analyze_chunk = MagicMock(side_effect=mock_analyses)
+        handler._filter_analysis = lambda x: x
+        handler.model.generate.return_value = ["essay result"]
+        handler.config.MIN_ESSAY_LENGTH_THRESHOLD = 0
+        print(f"DEBUG: extract_response mock will return: {mock_analyses}")
+        try:
+            result = handler.generate_essay(topic=test_topic, word_limit=test_limit, style=test_style)
+            print(f"DEBUG: generate_essay returned: {result}")
+            # Use the actual postprocessing logic to compute the expected result
+            joined = "\n\n".join([s.strip() for s in mock_analyses])
+            expected_essay = postprocess_essay(joined, test_limit, paragraph_words=DEFAULT_PARAGRAPH_WORDS)
+            assert result == expected_essay
+        except Exception as e:
+            print(f"TEST DEBUG: Exception during essay generation: {e}")
+            raise
 
-        # Remove assertion for format_essay_prompt since it is not called in this mock path
-        # handler.prompt_template.format_essay_prompt.assert_called_once_with(
-        #     topic=test_topic,
-        #     style=test_style,
-        #     word_limit=test_limit,
-        #     analysis=combined_analysis,
-        #     citations=None
-        # )
-
-        assert result == handler.prompt_template.extract_response.return_value
+    # --- Tests for chunk analysis caching ---
 
     def test_chunk_analysis_caching(self, test_setup_handler):
         """Test that generate_essay uses cached chunk analysis and skips re-analysis/caching for cached chunks."""
