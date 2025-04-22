@@ -15,7 +15,6 @@ from typing import Optional, List, Dict
 from .utils import truncate_text, filter_analysis, prepare_citations, format_essay_from_analyses, postprocess_essay
 from .utils import truncate_text, filter_analysis, prepare_citations, format_essay_from_analyses
 from src.book_to_essay.error_utils import log_and_raise
-from src.book_to_essay.prompts.factory import get_prompt_template
 from src.book_to_essay.prompts.config import PromptConfig
 
 logger = logging.getLogger(__name__)
