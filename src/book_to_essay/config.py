@@ -4,6 +4,7 @@ import logging
 import torch
 from dotenv import load_dotenv
 from transformers import BitsAndBytesConfig
+import re
 
 # Configure logging
 logging.basicConfig(
@@ -35,9 +36,8 @@ except ImportError:
 logger.info(f"Environment detected: GPU={HAS_GPU}, BitsAndBytes={HAS_BITSANDBYTES}")
 
 # Model Settings
-MODEL_NAME = "deepseek-ai/deepseek-llm-7b-base"  # Using the larger DeepSeek model for better quality
-# Alternative models (commented out)
-# MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.1"  # Mistral model
+# MODEL_NAME = "deepseek-ai/deepseek-llm-7b-base"  # Using the larger DeepSeek model for better quality
+MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.1"  # Switched to Mistral model for testing
 # MODEL_NAME = "deepseek-ai/deepseek-coder-1.3b-base"  # Smaller DeepSeek model
 
 # Default model generation parameters
@@ -47,6 +47,32 @@ TEMPERATURE = 0.7
 # Chunking settings for large texts
 MAX_CHUNK_SIZE = 1500  # Maximum size of text chunks for processing large documents
 MAX_CHUNKS_PER_ANALYSIS = 5  # Maximum number of chunks to analyze for a single essay
+
+def safe_model_cache_dir(model_name):
+    # Convert model name to a safe directory string
+    return re.sub(r'[^a-zA-Z0-9_.-]', '_', model_name)
+
+# Cache Settings
+CACHE_DIR = os.path.join(os.path.expanduser('~'), '.cache', 'busy_student_companion')
+MODEL_CACHE_DIR = os.path.join(CACHE_DIR, 'models', safe_model_cache_dir(MODEL_NAME))
+CONTENT_CACHE_DIR = os.path.join(CACHE_DIR, 'content')
+os.makedirs(CACHE_DIR, exist_ok=True)
+os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
+os.makedirs(CONTENT_CACHE_DIR, exist_ok=True)
+
+# App Settings
+DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
+MAX_UPLOAD_SIZE_MB = int(os.getenv('MAX_UPLOAD_SIZE_MB', 50))
+MAX_TOKENS = int(os.getenv('MAX_TOKENS', 4000))
+
+# File Settings
+SUPPORTED_FORMATS = ['.pdf', '.txt', '.epub']
+UPLOAD_DIR = 'uploads'
+OUTPUT_DIR = 'output'
+
+# Ensure required directories exist
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 class QuantizationConfig:
     """Configuration for model quantization."""
@@ -95,25 +121,3 @@ class QuantizationConfig:
 
 # Get quantization configuration
 QUANT_CONFIG = QuantizationConfig.get_config()
-
-# Cache Settings
-CACHE_DIR = os.path.join(os.path.expanduser('~'), '.cache', 'busy_student_companion')
-MODEL_CACHE_DIR = os.path.join(CACHE_DIR, 'models')  # Specific directory for model files
-CONTENT_CACHE_DIR = os.path.join(CACHE_DIR, 'content')  # Directory for processed content
-os.makedirs(CACHE_DIR, exist_ok=True)
-os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
-os.makedirs(CONTENT_CACHE_DIR, exist_ok=True)
-
-# App Settings
-DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
-MAX_UPLOAD_SIZE_MB = int(os.getenv('MAX_UPLOAD_SIZE_MB', 50))
-MAX_TOKENS = int(os.getenv('MAX_TOKENS', 4000))
-
-# File Settings
-SUPPORTED_FORMATS = ['.pdf', '.txt', '.epub']
-UPLOAD_DIR = 'uploads'
-OUTPUT_DIR = 'output'
-
-# Ensure required directories exist
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(OUTPUT_DIR, exist_ok=True)
