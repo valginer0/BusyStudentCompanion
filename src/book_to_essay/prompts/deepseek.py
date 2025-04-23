@@ -59,7 +59,7 @@ CONTENT TO USE:
 
 ESSAY SPECIFICATIONS:
 - Length: Approximately {config.word_limit} words
-- Format: MLA style with proper citations
+- Format: MLA style with proper in-text citations and a Works Cited section
 - Style: {config.style.capitalize()}
 - Focus: Analysis of '{config.topic}' with textual evidence
 - Structure: Introduction with thesis, body paragraphs with evidence, and conclusion
@@ -70,9 +70,11 @@ ESSAY STRUCTURE:
 - Conclusion: Synthesize your analysis and explain the significance of '{config.topic}'
 
 IMPORTANT GUIDELINES:
-- AVOID plot summary - focus on analysis
-- INCLUDE specific textual evidence and quotes
-- USE MLA in-text citations when quoting (Author Page)
+- DO NOT summarize or copy the plot. Absolutely avoid plot summary or retelling.
+- DO NOT copy or paraphrase large blocks of the original text. Focus on critical analysis and interpretation.
+- Your essay MUST be thesis-driven and analytical, not descriptive.
+- INCLUDE specific textual evidence and quotes, with MLA in-text citations (Author Page)
+- Explicitly require a Works Cited section in MLA format at the end
 - DO NOT discuss social media, data analysis, AI, or homework
 - DO NOT include any meta-text about writing an essay
 - DO NOT repeat these instructions or include explanatory text

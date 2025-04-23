@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 MAX_TEST_DURATION = 7200  # seconds
 
 # Set to True to use a smaller test file for faster testing
-USE_SMALL_TEST = True
+USE_SMALL_TEST = False
 
 def main():
     """Test the enhanced essay generation functionality."""

@@ -71,8 +71,10 @@ class AIBookEssayGenerator:
 
         # Try to extract metadata from content
         author, title = self.extract_metadata_from_text(content)
+        logger.debug(f"Extracted metadata - Author: {author}, Title: {title}")
         # Fallback: parse from filename if not found in content
         if not (author and title):
+            logger.warning(f"Metadata extraction incomplete. Author: {author}, Title: {title}. Attempting filename fallback.")
             # Parse filename: "Author - Title - Extra.txt" or "Author - Title.txt"
             base = os.path.basename(file_path)
             base = base.rsplit('.', 1)[0]
@@ -81,6 +83,7 @@ class AIBookEssayGenerator:
             if match:
                 author = author or match.group(1).strip()
                 title = title or match.group(2).strip()
+        logger.info(f"Final metadata used - Author: {author}, Title: {title}")
         source = {
             'path': file_path,
             'name': os.path.basename(file_path),
@@ -88,6 +91,7 @@ class AIBookEssayGenerator:
             'author': author,
             'title': title
         }
+        logger.info(f"Source dict being cached: {source}")
         # Cache the processed content
         cache_data = {
             "content": content,
