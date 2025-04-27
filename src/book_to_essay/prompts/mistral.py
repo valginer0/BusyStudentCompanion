@@ -11,24 +11,12 @@ class MistralPromptTemplate(PromptTemplate):
         """Format a prompt for analyzing a chunk of text for Mistral model.
         
         Args:
-            config: PromptConfig object with fields: chunk, topic, source_info
+            config: PromptConfig object with fields: analysis_text, topic, source_info
             
         Returns:
             A formatted prompt string
         """
-        prompt = f"""<s>[INST] You are a literary scholar analyzing literature. Analyze the following text excerpt and extract content related to '{config.topic}'.
-
-Text to analyze:
-```
-{config.chunk}
-```
-
-Analyze this text by:
-1. Identifying key quotes related to '{config.topic}'
-2. Analyzing themes and motifs related to '{config.topic}'
-3. Examining character development related to '{config.topic}'
-
-IMPORTANT: Provide ONLY your analysis. Start directly with your substantive analysis. Don't include labels, headers, or refer to yourself. [/INST]"""
+        prompt = f"""<s>[INST] You are a literary scholar analyzing literature. Your task is to extract and analyze material from this text excerpt that relates to '{config.topic}'. \n\nTEXT TO ANALYZE:\n{config.analysis_text}\n\nYOUR TASK:\n- Identify key quotes that illustrate '{config.topic}'\n- Note significant themes, motifs, and literary devices related to '{config.topic}'\n- Analyze character development and dialogue that relates to '{config.topic}'\n- Extract evidence for literary analysis about '{config.topic}'\n\nIMPORTANT: Your response must ONLY contain analysis content. DO NOT:\n- Repeat these instructions\n- Include phrases like \"here is my analysis\" or \"as requested\"\n- Include section headers like \"Analysis:\" or \"Key Quotes:\"\n- Refer to yourself, the reader, or the task itself\n- Mention social media, data analysis, AI, or homework\n\nStart directly with substantive analysis. [/INST]"""
 
         return prompt
     
@@ -41,15 +29,7 @@ IMPORTANT: Provide ONLY your analysis. Start directly with your substantive anal
         Returns:
             A formatted prompt string
         """
-        prompt = f"""<s>[INST] Write a well-structured {config.style} essay about '{config.topic}' using the following analysis as reference:
-
-```
-{config.analysis_text}
-```
-
-Your essay should be approximately {config.word_limit} words, use MLA format, include textual evidence, and have a clear thesis statement.
-
-Write a complete essay with introduction, body paragraphs, and conclusion. Start directly with the essay text, with no headers or meta-commentary. [/INST]"""
+        prompt = f"""<s>[INST] You are writing an essay as a literary scholar. Please use the following specifications:\n\nTopic to analyze: {config.topic}\nPreferred style: {config.style}\nWord limit: {config.word_limit}\nSpecific analysis text (if any): {config.analysis_text if config.analysis_text else 'N/A'}\n\nWrite a well-structured, {config.style} essay analyzing '{config.topic}' based on the provided literary analysis.\n\nCONTENT TO USE:\n{config.analysis_text}\n\n**DO NOT INCLUDE ANY INSTRUCTIONS IN YOUR RESPONSE.**\n**START DIRECTLY WITH THE ESSAY - BEGIN WITH THE FIRST PARAGRAPH OF YOUR ESSAY.**\n**DO NOT INCLUDE NUMBERED POINTS, ESSAY SPECIFICATIONS, OR META COMMENTARY.**"""
 
         return prompt
     

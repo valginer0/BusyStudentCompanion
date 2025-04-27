@@ -47,7 +47,14 @@ Start directly with substantive analysis. [/INST]"""
         Returns:
             A formatted prompt string
         """
-        prompt = f"""<s>[INST] You are writing an essay as a literary scholar. Write a well-structured, {config.style} essay analyzing '{config.topic}' based on the provided literary analysis.
+        prompt = f"""<s>[INST] You are writing an essay as a literary scholar. Please use the following specifications:
+
+Topic to analyze: {config.topic}
+Preferred style: {config.style}
+Word limit: {config.word_limit}
+Specific analysis text (if any): {config.analysis_text if config.analysis_text else 'N/A'}
+
+Write a well-structured, {config.style} essay analyzing '{config.topic}' based on the provided literary analysis.
 
 CONTENT TO USE:
 {config.analysis_text}
