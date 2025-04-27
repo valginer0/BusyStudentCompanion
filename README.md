@@ -1,14 +1,14 @@
 # BusyStudentCompanion
 
-A powerful AI-powered tool that helps students analyze books and generate well-structured essays. Using state-of-the-art AI technology (DeepSeek model), this companion tool streamlines the process of understanding literature and creating thoughtful essay content.
+A powerful AI-powered tool that helps students analyze books and generate well-structured essays. Using state-of-the-art AI technology (**Mistral** or **DeepSeek** model, configurable), this companion tool streamlines the process of understanding literature and creating thoughtful essay content.
 
 ## Features
 
-- **Multi-format Support**: Process various document formats including PDF, EPUB, and DOCX
-- **AI-Powered Analysis**: Leverages the DeepSeek model for intelligent text understanding
-- **Essay Generation**: Creates well-structured essays based on book content
-- **Smart Caching**: Efficient content caching system for improved performance
-- **Web Interface**: User-friendly Streamlit-based web interface
+- Analyze books and generate essays with either **Mistral** or **DeepSeek** language models (selectable in configuration)
+- MLA-compliant citations and Works Cited generation
+- Supports TXT, PDF, and EPUB formats
+- Thesis-driven, evidence-based essay generation
+- Streamlit-based graphical user interface for easy use
 
 ## Installation
 
@@ -37,16 +37,39 @@ pip install -r requirements-gpu.txt
 pip install -r requirements-cpu.txt
 ```
 
-4. Set up environment variables:
+4. Set up environment variables and select model:
 ```bash
 cp .env.example .env
 # Edit .env file with your API keys and configuration
+# Set the MODEL_NAME variable to either 'mistralai/Mistral-7B-Instruct-v0.1' or 'deepseek-ai/deepseek-llm-7b-base'
 ```
+
+## Model Selection
+
+You can choose between **Mistral** and **DeepSeek** models for essay generation. To change the model, edit the `MODEL_NAME` variable in your `.env` file or in `src/book_to_essay/config.py`:
+
+```
+MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.1"  # For Mistral
+# or
+MODEL_NAME = "deepseek-ai/deepseek-llm-7b-base"   # For DeepSeek
+```
+
+## Model Availability
+
+Both the **Mistral** and **DeepSeek** models are free to use for research and non-commercial purposes:
+
+- [Mistral-7B-Instruct-v0.1 on Hugging Face](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.1) ([License](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.1/blob/main/LICENSE))
+- [DeepSeek LLM-7B on Hugging Face](https://huggingface.co/deepseek-ai/deepseek-llm-7b-base) ([License](https://huggingface.co/deepseek-ai/deepseek-llm-7b-base/blob/main/LICENSE))
+
+## Model Download
+
+You do **not** need to manually download the models.  
+**On first run, the application will automatically download the selected model** (as specified by `MODEL_NAME` in your `.env` or `config.py`). The download is ~4GB and will be cached for future runs.
 
 ## First Run Notice
 
 On the first run, the application will:
-1. Download the DeepSeek language model (optimized size: ~4GB)
+1. Download the selected language model (optimized size: ~4GB)
 2. The download may take 15-30 minutes depending on your internet speed
 3. The model will be cached locally and subsequent runs will start immediately
 4. Memory usage is optimized using 4-bit quantization while maintaining high quality
@@ -55,7 +78,9 @@ On the first run, the application will:
 
 The application uses a two-level caching system:
 
-1. **Model Caching**: Downloaded model files are stored in `/home/user/.cache/busy_student_companion/models/models--deepseek-ai--*` directories
+1. **Model Caching**: Downloaded model files are stored in subdirectories such as:
+   - `/home/user/.cache/busy_student_companion/models/models--deepseek-ai--*`
+   - `/home/user/.cache/busy_student_companion/models/models--mistralai--*`
 2. **Generation Caching**: Results of chunk analysis are stored in `/home/user/.cache/busy_student_companion/models/chunk_cache/*.pkl` files
 
 When developing or testing changes to the essay generation or filtering logic:
@@ -137,7 +162,6 @@ BusyStudentCompanion/
 
 The following environment variables can be configured in `.env`:
 
-- `DEEPSEEK_API_KEY`: Your DeepSeek API key
 - `CACHE_DIR`: Directory for cached content (default: `.cache`)
 - `MAX_CACHE_SIZE`: Maximum cache size in MB (default: 1000)
 
