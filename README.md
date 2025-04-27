@@ -126,6 +126,95 @@ PYTHONPATH=$PYTHONPATH:$(pwd) streamlit run src/book_to_essay/streamlit_app.py
 3. The AI will analyze the content and generate an essay
 4. Review and download the generated essay
 
+## Container Usage
+
+You can run BusyStudentCompanion in a Docker container for easy sharing and deployment.
+
+### Build the Docker image (CPU, default)
+
+```bash
+docker build -t busystudentcompanion:cpu .
+```
+
+### Build the Docker image (GPU, NVIDIA CUDA)
+
+```bash
+docker build --build-arg BASE_IMAGE=nvidia/cuda:12.2.0-runtime-ubuntu22.04 --build-arg TARGET=gpu -t busystudentcompanion:gpu .
+```
+
+### GPU Support (NVIDIA)
+
+To use GPU acceleration inside Docker containers, you need to install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) **once on your computer**. This allows Docker to access your NVIDIA GPU.
+
+- You only need to install the toolkit once per machine.
+- Follow the [official installation guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) for your operating system.
+- After installation, you can run GPU-enabled containers with `--gpus all`.
+
+If you do not install the toolkit, GPU support will not be available, but you can still run the app on CPU.
+
+### Run the container (GPU)
+
+- Requires NVIDIA Container Toolkit (see above)
+
+```bash
+docker run --gpus all -p 8501:8501 --rm busystudentcompanion:gpu
+```
+
+- The app will be available at [http://localhost:8501](http://localhost:8501)
+
+### Run the container (CPU)
+
+```bash
+docker run -p 8501:8501 --rm busystudentcompanion:cpu
+```
+
+### Recommended: Persist Model Cache
+
+To avoid re-downloading large model files every time you run the container, **mount a cache directory** from your host:
+
+```bash
+# CPU
+docker run -p 8501:8501 -v /your/cache/dir:/cache --rm busystudentcompanion:cpu
+
+# GPU
+docker run --gpus all -p 8501:8501 -v /your/cache/dir:/cache --rm busystudentcompanion:gpu
+```
+
+Replace `/your/cache/dir` with a directory path on your host machine (e.g., `/home/youruser/bsc_cache`).
+
+### Running from a Container Registry
+
+If the image is already published to a registry (e.g., Docker Hub):
+
+```bash
+# Pull the image (CPU example)
+docker pull yourdockerhubusername/busystudentcompanion:cpu
+
+# Run it (with cache recommended)
+docker run -p 8501:8501 -v /your/cache/dir:/cache --rm yourdockerhubusername/busystudentcompanion:cpu
+```
+
+For GPU:
+
+```bash
+docker pull yourdockerhubusername/busystudentcompanion:gpu
+docker run --gpus all -p 8501:8501 -v /your/cache/dir:/cache --rm yourdockerhubusername/busystudentcompanion:gpu
+```
+
+Replace `yourdockerhubusername` with your Docker Hub username or your target registry.
+
+### Push to a registry (example: Docker Hub)
+
+```bash
+docker tag busystudentcompanion:cpu yourdockerhubusername/busystudentcompanion:cpu
+# or for GPU
+# docker tag busystudentcompanion:gpu yourdockerhubusername/busystudentcompanion:gpu
+docker push yourdockerhubusername/busystudentcompanion:cpu
+# docker push yourdockerhubusername/busystudentcompanion:gpu
+```
+
+Replace `yourdockerhubusername` with your Docker Hub username or your target registry.
+
 ## Running Scripts (WSL Ubuntu on Windows 11)
 
 Use the following command pattern to run scripts (from Windows):
