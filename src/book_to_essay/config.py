@@ -53,11 +53,12 @@ def safe_model_cache_dir(model_name):
     return re.sub(r'[^a-zA-Z0-9_.-]', '_', model_name)
 
 # Cache Settings
-CACHE_DIR = os.path.join(os.path.expanduser('~'), '.cache', 'busy_student_companion')
-MODEL_CACHE_DIR = os.path.join(CACHE_DIR, 'models', safe_model_cache_dir(MODEL_NAME))
-CONTENT_CACHE_DIR = os.path.join(CACHE_DIR, 'content')
-os.makedirs(CACHE_DIR, exist_ok=True)
-os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
+# Set the cache root to the Docker-mapped persistent directory
+MODEL_CACHE_ROOT = os.getenv('MODEL_CACHE_ROOT', '/app/cache/models')
+# Do not append model-specific subfolders; let HuggingFace manage them
+MODEL_CACHE_DIR = MODEL_CACHE_ROOT
+CONTENT_CACHE_DIR = os.path.join(MODEL_CACHE_ROOT, 'content')
+os.makedirs(MODEL_CACHE_ROOT, exist_ok=True)
 os.makedirs(CONTENT_CACHE_DIR, exist_ok=True)
 
 # App Settings
