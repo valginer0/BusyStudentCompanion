@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1
 
-ARG BASE_IMAGE=python:3.10-slim
-FROM ${BASE_IMAGE}
+FROM python:3.10-slim
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+# Set environment variables to force CPU
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 ENV TRANSFORMERS_CACHE=/cache/huggingface
+ENV FORCE_CUDA=0
+ENV CUDA_VISIBLE_DEVICES=""
 
-# Set work directory
 WORKDIR /app
 
 # Install system dependencies
@@ -21,25 +21,18 @@ RUN apt-get update && \
         libxrender1 \
         libxext6 \
         ffmpeg \
-        && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
+# Copy requirements.txt before installing dependencies
 COPY requirements.txt requirements.txt
-COPY requirements-cpu.txt requirements-cpu.txt
-COPY requirements-gpu.txt requirements-gpu.txt
 
-ARG TARGET=cpu
+# Install CPU version of torch and dependencies FIRST
+RUN pip install --no-cache-dir torch==2.1.2+cpu torchvision==0.16.2+cpu torchaudio==2.1.2+cpu -f https://download.pytorch.org/whl/torch_stable.html \
+    && pip install --no-cache-dir -r requirements.txt
 
-# Install Python dependencies (CPU by default; can be overridden at build time)
-RUN pip install --upgrade pip && \
-    pip install -r requirements.txt && \
-    if [ "$TARGET" = "gpu" ]; then pip install -r requirements-gpu.txt; else pip install -r requirements-cpu.txt; fi
-
-# Copy project files
+# Copy the rest of the project
 COPY . .
 
-# Expose Streamlit port
 EXPOSE 8501
 
-# Default command to run Streamlit app
 CMD ["streamlit", "run", "src/book_to_essay/streamlit_app.py"]

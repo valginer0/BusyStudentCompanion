@@ -1,0 +1,57 @@
+version: '3.8'
+services:
+  app-cpu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app
+      - model-cache:/cache/torch
+      - huggingface-cache:/cache/huggingface
+      - ./cache/content:/app/cache/content
+      - ./cache/models:/app/cache/models
+    environment:
+      - PYTHONPATH=/app
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+    ports:
+      - "8501:8501"
+    command: streamlit run src/book_to_essay/streamlit_app.py
+
+  app-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    runtime: nvidia
+    volumes:
+      - .:/app
+      - model-cache:/cache/torch
+      - huggingface-cache:/cache/huggingface
+      - ./cache/content:/app/cache/content
+      - ./cache/models:/app/cache/models
+    environment:
+      - PYTHONPATH=/app
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+    ports:
+      - "8502:8501"
+    command: streamlit run src/book_to_essay/streamlit_app.py
+
+  app-gpu-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    volumes:
+      - .:/app
+      - model-cache:/cache/torch
+      - huggingface-cache:/cache/huggingface
+      - ./cache/content:/app/cache/content
+      - ./cache/models:/app/cache/models
+    environment:
+      - PYTHONPATH=/app
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+    ports:
+      - "8503:8501"
+    command: streamlit run src/book_to_essay/streamlit_app.py
+
+volumes:
+  model-cache:
+  huggingface-cache:

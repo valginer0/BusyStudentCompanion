@@ -1,0 +1,37 @@
+# Production GPU Dockerfile - requires NVIDIA GPU
+FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
+
+# Install Python and dependencies
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    git \
+    libglib2.0-0 \
+    libsm6 \
+    libxrender1 \
+    libxext6 \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+ENV TRANSFORMERS_CACHE=/cache/huggingface
+
+# Copy requirements.txt before installing dependencies
+COPY requirements.txt requirements.txt
+
+# Install GPU version of torch and dependencies FIRST
+RUN pip3 install --no-cache-dir torch==2.1.2+cu118 torchvision==0.16.2+cu118 torchaudio==2.1.2+cu118 -f https://download.pytorch.org/whl/torch_stable.html \
+    && pip3 install --no-cache-dir -r requirements.txt
+
+# Copy the rest of the project
+COPY . .
+
+# Expose Streamlit port
+EXPOSE 8501
+
+CMD ["streamlit", "run", "src/book_to_essay/streamlit_app.py"]
