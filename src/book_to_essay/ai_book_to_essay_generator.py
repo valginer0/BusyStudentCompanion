@@ -58,9 +58,15 @@ class AIBookEssayGenerator:
         validate_filename_for_citation(file_path)
         
         # Check cache first
+        file_hash = self.cache_manager._get_file_hash(file_path)
+        logger.info(f"[CACHE DEBUG] File: {file_path} | Hash: {file_hash}")
         cached_content = self.cache_manager.get_cached_content(file_path)
         if cached_content is not None:
             self.content += cached_content["content"] + "\n"
+            # Ensure hash is present in source dict
+            if 'hash' not in cached_content["source"]:
+                cached_content["source"]['hash'] = file_hash
+            logger.info(f"[CACHE DEBUG] Loaded cached content for file {file_path} with hash {file_hash}")
             self.sources.append(cached_content["source"])
             return cached_content
 
@@ -84,14 +90,17 @@ class AIBookEssayGenerator:
                 author = author or match.group(1).strip()
                 title = title or match.group(2).strip()
         logger.info(f"Final metadata used - Author: {author}, Title: {title}")
+        logger.info(f"[CACHE DEBUG] Recomputed file hash after processing: {file_hash}")
         source = {
             'path': file_path,
             'name': os.path.basename(file_path),
             'type': os.path.splitext(file_path)[1][1:],
             'author': author,
-            'title': title
+            'title': title,
+            'hash': file_hash
         }
-        logger.info(f"Source dict being cached: {source}")
+        logger.info(f"[CACHE DEBUG] Source dict to be cached: {source}")
+        logger.info(f"[CACHE DEBUG] Caching content for file {file_path} with hash {file_hash}")
         # Cache the processed content
         cache_data = {
             "content": content,

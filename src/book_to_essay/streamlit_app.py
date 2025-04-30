@@ -132,35 +132,23 @@ def main():
             for quote in st.session_state.quotes:
                 st.markdown(f"> {quote}")
             
-            # Logging for debugging
-            import logging
-            logging.info(f"Essay for download (first 100 chars): {st.session_state.essay[:100]}")
-            logging.info(f"Quotes for download: {st.session_state.quotes}")
-            
-            # Always regenerate downloadable files from the latest essay
             col_word, col_pdf = st.columns(2)
             with col_word:
-                logging.info("Generating downloadable files...")
                 docx_data = create_docx(st.session_state.essay)
-                logging.info(f"DOCX data generated for download, length: {len(docx_data)} bytes")
                 st.download_button(
                     "Download as Word",
                     docx_data,
                     file_name="generated_essay.docx",
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 )
-                logging.info("Generated downloadable files.")
             with col_pdf:
-                logging.info("Generating downloadable files...")
                 pdf_data = create_pdf(st.session_state.essay)
-                logging.info(f"PDF data generated for download, length: {len(pdf_data)} bytes")
                 st.download_button(
                     "Download as PDF",
                     pdf_data,
                     file_name="generated_essay.pdf",
                     mime="application/pdf"
                 )
-                logging.info("Generated downloadable files.")
 
 if __name__ == "__main__":
     main()
