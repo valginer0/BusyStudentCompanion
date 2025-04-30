@@ -130,7 +130,39 @@ PYTHONPATH=$PYTHONPATH:$(pwd) streamlit run src/book_to_essay/streamlit_app.py
 
 You can run BusyStudentCompanion in a Docker container for easy sharing and deployment.
 
-### Build the Docker image (CPU, default)
+### Using Pre-built Images from GitHub Container Registry (recommended)
+
+Pre-built CPU and GPU images are published to **GHCR**:
+
+- CPU: `ghcr.io/valginer0/busystudentcompanion-app-cpu:latest`
+- GPU: `ghcr.io/valginer0/busystudentcompanion-app-gpu:latest`
+
+1. Authenticate once per machine (replace placeholders):
+```bash
+echo <GITHUB_PAT> | docker login ghcr.io -u <github_username> --password-stdin
+```
+2. Pull and run with **Docker Compose** (handles volumes & ports automatically):
+```bash
+# CPU
+docker-compose pull app-cpu
+docker-compose up -d app-cpu
+
+# GPU (requires NVIDIA Container Toolkit)
+docker-compose pull app-gpu
+docker-compose up -d app-gpu
+```
+3. Or run directly with `docker run` (cache volume optional):
+```bash
+# CPU
+docker run -p 8501:8501 -v /your/cache/dir:/cache --rm \
+  ghcr.io/valginer0/busystudentcompanion-app-cpu:latest
+
+# GPU
+docker run --gpus all -p 8501:8501 -v /your/cache/dir:/cache --rm \
+  ghcr.io/valginer0/busystudentcompanion-app-gpu:latest
+```
+
+### Build the Docker image locally (advanced / contributors)
 
 ```bash
 docker build -t busystudentcompanion:cpu .
@@ -184,36 +216,36 @@ Replace `/your/cache/dir` with a directory path on your host machine (e.g., `/ho
 
 ### Running from a Container Registry
 
-If the image is already published to a registry (e.g., Docker Hub):
+If the image is already published to a registry, e.g. **GitHub Container Registry (GHCR)**:
 
 ```bash
 # Pull the image (CPU example)
-docker pull yourdockerhubusername/busystudentcompanion:cpu
+docker pull ghcr.io/valginer0/busystudentcompanion-app-cpu:latest
 
 # Run it (with cache recommended)
-docker run -p 8501:8501 -v /your/cache/dir:/cache --rm yourdockerhubusername/busystudentcompanion:cpu
+docker run -p 8501:8501 -v /your/cache/dir:/cache --rm \
+  ghcr.io/valginer0/busystudentcompanion-app-cpu:latest
 ```
 
 For GPU:
 
 ```bash
-docker pull yourdockerhubusername/busystudentcompanion:gpu
-docker run --gpus all -p 8501:8501 -v /your/cache/dir:/cache --rm yourdockerhubusername/busystudentcompanion:gpu
+docker pull ghcr.io/valginer0/busystudentcompanion-app-gpu:latest
+docker run --gpus all -p 8501:8501 -v /your/cache/dir:/cache --rm \
+  ghcr.io/valginer0/busystudentcompanion-app-gpu:latest
 ```
 
-Replace `yourdockerhubusername` with your Docker Hub username or your target registry.
+Remember to authenticate to GHCR first if the image is private.
 
-### Push to a registry (example: Docker Hub)
+### Push to a registry (example: GitHub Container Registry)
 
 ```bash
-docker tag busystudentcompanion:cpu yourdockerhubusername/busystudentcompanion:cpu
+docker tag busystudentcompanion:cpu ghcr.io/valginer0/busystudentcompanion-app-cpu:latest
 # or for GPU
-# docker tag busystudentcompanion:gpu yourdockerhubusername/busystudentcompanion:gpu
-docker push yourdockerhubusername/busystudentcompanion:cpu
-# docker push yourdockerhubusername/busystudentcompanion:gpu
+# docker tag busystudentcompanion:gpu ghcr.io/valginer0/busystudentcompanion-app-gpu:latest
+docker push ghcr.io/valginer0/busystudentcompanion-app-cpu:latest
+# docker push ghcr.io/valginer0/busystudentcompanion-app-gpu:latest
 ```
-
-Replace `yourdockerhubusername` with your Docker Hub username or your target registry.
 
 ## Running Scripts (WSL Ubuntu on Windows 11)
 

@@ -11,17 +11,31 @@ This guide explains how to run BusyStudentCompanion using Docker and Docker Comp
 ## Quick Start
 
 1. Copy or update your `.env` file if needed (not required for basic Streamlit usage).
-2. Build and run with Docker Compose:
+2. **Pull** the pre-built image(s) (optional but faster):
+    ```bash
+    # Authenticate once per machine
+    echo <GITHUB_PAT> | docker login ghcr.io -u <github_username> --password-stdin
+    
+    # CPU image
+    docker-compose pull app-cpu
+    # GPU image (optional, requires NVIDIA Docker)
+    docker-compose pull app-gpu
+    ```
+3. **Run with Docker Compose** (handles volumes & ports automatically):
+    ```bash
+    # CPU version
+    docker-compose up -d app-cpu
+    
+    # GPU version (requires NVIDIA Docker)
+    docker-compose up -d app-gpu
+    ```
 
+Or, to build locally instead of pulling:
 ```bash
-# For CPU version:
-docker-compose up app-cpu
-
-# For GPU version (requires NVIDIA Docker):
-docker-compose up app-gpu
-
-# For GPU code testing on CPU:
-docker-compose up app-gpu-test
+# Build CPU
+docker-compose build app-cpu
+# Build GPU
+docker-compose build app-gpu
 ```
 
 The Streamlit app will be available at:
