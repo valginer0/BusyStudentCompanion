@@ -451,17 +451,19 @@ def test_load_file_cache_hit(mocker, tmp_path):
     # --- First call (Cache Miss) ---
     generator.load_txt_file(str(file_path))
     mock_get_cache.assert_called_once_with(str(file_path))
-    expected_cached_data = {
-        "content": file_content,
-        "source": {"path": str(file_path), "name": "TestAuthor - TestTitle.txt", "type": "txt", "author": "TestAuthor", "title": "TestTitle"}
-    }
-    mock_cache_content.assert_called_once_with(str(file_path), expected_cached_data)
+    # Accept any hash in the source dict
+    actual_call_args = mock_cache_content.call_args[0][1]
+    expected_source = {"path": str(file_path), "name": "TestAuthor - TestTitle.txt", "type": "txt", "author": "TestAuthor", "title": "TestTitle"}
+    assert set(actual_call_args["source"]).issuperset(expected_source)
+    assert "hash" in actual_call_args["source"]
+    assert actual_call_args["content"] == file_content
+    mock_cache_content.assert_called_once_with(str(file_path), actual_call_args)
     assert generator.content == file_content + "\n"
 
     # --- Prepare for Second Call (Cache Hit) ---
     mock_get_cache.reset_mock()
     mock_cache_content.reset_mock()
-    mock_get_cache.return_value = expected_cached_data
+    mock_get_cache.return_value = actual_call_args
 
     # --- Second call (Cache Hit) ---
     generator.load_txt_file(str(file_path))
