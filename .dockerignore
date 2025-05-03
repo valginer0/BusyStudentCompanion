@@ -8,6 +8,8 @@ model_cache
 output
 test_data
 test_results
+tests/
+test_*.py
 htmlcov
 uploads
 .idea
