@@ -65,6 +65,7 @@ class AIBookEssayGenerator:
             self.content += cached_content["content"] + "\n"
             # Ensure hash is present in source dict
             if 'hash' not in cached_content["source"]:
+                file_hash = self.cache_manager._get_file_hash(file_path)
                 cached_content["source"]['hash'] = file_hash
             logger.info(f"[CACHE DEBUG] Loaded cached content for file {file_path} with hash {file_hash}")
             self.sources.append(cached_content["source"])
@@ -90,7 +91,7 @@ class AIBookEssayGenerator:
                 author = author or match.group(1).strip()
                 title = title or match.group(2).strip()
         logger.info(f"Final metadata used - Author: {author}, Title: {title}")
-        logger.info(f"[CACHE DEBUG] Recomputed file hash after processing: {file_hash}")
+        file_hash = self.cache_manager._get_file_hash(file_path)
         source = {
             'path': file_path,
             'name': os.path.basename(file_path),
