@@ -16,6 +16,8 @@ services:
     ports:
       - "8501:8501"
     command: streamlit run src/book_to_essay/streamlit_app.py
+    labels:
+      - "org.label-schema.description=CPU version of BusyStudentCompanion"
 
   app-gpu:
     build:
@@ -33,7 +35,9 @@ services:
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
     ports:
       - "8502:8501"
-    command: streamlit run src/book_to_essay/streamlit_app.py
+    command: /app/start.sh
+    labels:
+      - "org.label-schema.description=GPU-accelerated BusyStudentCompanion (beta)"
 
   app-gpu-test:
     build:
@@ -51,6 +55,8 @@ services:
     ports:
       - "8503:8501"
     command: streamlit run src/book_to_essay/streamlit_app.py
+    labels:
+      - "org.label-schema.description=Test version simulating GPU code on CPU"
 
 volumes:
   model-cache:
