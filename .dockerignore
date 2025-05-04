@@ -22,3 +22,11 @@ uploads
 *.DS_Store
 *.egg-info
 *.zone.identifier
+
+# Windows specific files
+*:Zone.Identifier
+*Zone.Identifier
+
+# Project specific
+archive.7z
+exclude.txt
