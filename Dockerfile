@@ -33,6 +33,9 @@ RUN pip install --no-cache-dir torch==2.1.2+cpu torchvision==0.16.2+cpu torchaud
 # Copy the rest of the project
 COPY . .
 
+# Replace host config with Docker-specific defaults
+COPY src/book_to_essay/config.docker.py /app/src/book_to_essay/config.py
+
 EXPOSE 8501
 
 CMD ["streamlit", "run", "src/book_to_essay/streamlit_app.py"]

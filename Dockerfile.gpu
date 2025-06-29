@@ -60,6 +60,9 @@ EOF
 # Copy the rest of the project
 COPY . .
 
+# Replace host config with Docker-specific defaults (GPU image)
+COPY src/book_to_essay/config.docker.py /app/src/book_to_essay/config.py
+
 # Create startup wrapper script
 COPY <<EOF /app/start.sh
 #!/bin/bash

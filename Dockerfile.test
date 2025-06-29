@@ -33,6 +33,9 @@ RUN pip3 install --no-cache-dir --upgrade pip && \
 # Copy the rest of the project
 COPY . .
 
+# Replace host config with Docker-specific defaults (test image)
+COPY src/book_to_essay/config.docker.py /app/src/book_to_essay/config.py
+
 # Expose Streamlit port
 EXPOSE 8501
 
