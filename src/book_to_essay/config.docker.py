@@ -18,6 +18,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Load environment variables from a .env file if one is baked into the image or supplied via bind mount.
+load_dotenv()
+
 # -----------------------------------------------------------------------------
 # Model Settings (Docker default)
 # -----------------------------------------------------------------------------

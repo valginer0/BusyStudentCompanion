@@ -13,6 +13,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Load environment variables from a .env file if present (host development convenience)
+load_dotenv()
+
 # -----------------------------------------------------------------------------
 # Model Settings (static defaults for host usage)
 # -----------------------------------------------------------------------------
