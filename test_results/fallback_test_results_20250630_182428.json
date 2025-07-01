@@ -1,0 +1,99 @@
+{
+  "total_tests": 7,
+  "fallbacks": 7,
+  "reasons": {
+    "No Text Loaded": 1,
+    "Empty Chunks": 1,
+    "Chunk Analysis Empty": 2,
+    "Token Limit Exceeded": 1,
+    "Essay Too Short": 2
+  },
+  "scenarios": {
+    "no_text_loaded": 1,
+    "empty_chunks": 1,
+    "short_chunks": 1,
+    "irrelevant_content": 1,
+    "very_long_chunk": 1,
+    "obscure_topic": 1,
+    "unrelated_topic": 1
+  },
+  "detailed_results": [
+    {
+      "scenario": "no_text_loaded",
+      "topic": "The theme of love in literature",
+      "expected_reason": "No Text Loaded",
+      "detected_reason": "No Text Loaded",
+      "fallback_occurred": true,
+      "essay_length": 0,
+      "word_count": 0,
+      "error": "No text has been loaded. Please load text first.",
+      "timestamp": "2025-06-30T16:19:37.133010"
+    },
+    {
+      "scenario": "empty_chunks",
+      "topic": "Character development in novels",
+      "expected_reason": "Empty Chunks",
+      "detected_reason": "Empty Chunks",
+      "fallback_occurred": true,
+      "essay_length": 3283,
+      "word_count": 501,
+      "error": null,
+      "timestamp": "2025-06-30T16:59:59.230728"
+    },
+    {
+      "scenario": "short_chunks",
+      "topic": "Symbolism in modern literature",
+      "expected_reason": "Chunk Analysis Empty",
+      "detected_reason": "Chunk Analysis Empty",
+      "fallback_occurred": true,
+      "essay_length": 3185,
+      "word_count": 501,
+      "error": null,
+      "timestamp": "2025-06-30T17:34:49.689639"
+    },
+    {
+      "scenario": "irrelevant_content",
+      "topic": "Feminist themes in Victorian literature",
+      "expected_reason": "Chunk Analysis Empty",
+      "detected_reason": "Chunk Analysis Empty",
+      "fallback_occurred": true,
+      "essay_length": 2013,
+      "word_count": 311,
+      "error": null,
+      "timestamp": "2025-06-30T17:45:25.617520"
+    },
+    {
+      "scenario": "very_long_chunk",
+      "topic": "The use of repetition in literature",
+      "expected_reason": "Token Limit Exceeded",
+      "detected_reason": "Token Limit Exceeded",
+      "fallback_occurred": true,
+      "essay_length": 5037,
+      "word_count": 1001,
+      "error": null,
+      "timestamp": "2025-06-30T18:01:19.261737"
+    },
+    {
+      "scenario": "obscure_topic",
+      "topic": "The quantum mechanics of fictional narratives",
+      "expected_reason": "Essay Too Short",
+      "detected_reason": "Essay Too Short",
+      "fallback_occurred": true,
+      "essay_length": 1913,
+      "word_count": 300,
+      "error": null,
+      "timestamp": "2025-06-30T18:15:11.882436"
+    },
+    {
+      "scenario": "unrelated_topic",
+      "topic": "Cryptocurrency economics in the 21st century",
+      "expected_reason": "Essay Too Short",
+      "detected_reason": "Essay Too Short",
+      "fallback_occurred": true,
+      "essay_length": 1580,
+      "word_count": 254,
+      "error": null,
+      "timestamp": "2025-06-30T18:24:28.782121"
+    }
+  ]
+}

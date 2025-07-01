@@ -16,6 +16,7 @@ from datetime import datetime
 
 from src.book_to_essay.model_handler import DeepSeekHandler
 from src.book_to_essay.fallback import FallbackReason
+from src.book_to_essay.model_loader import load_model, load_tokenizer
 
 # Configure logging
 logging.basicConfig(
@@ -60,7 +61,9 @@ class FallbackTestSuite:
     def setup(self):
         """Initialize model handler."""
         logger.info("Initializing base model handler")
-        self.base_model_handler = DeepSeekHandler()
+        model = load_model()
+        tokenizer = load_tokenizer()
+        self.base_model_handler = DeepSeekHandler(model=model, tokenizer=tokenizer)
         self.model_handler = self.base_model_handler
     
     def run_all_tests(self):
@@ -96,15 +99,17 @@ class FallbackTestSuite:
         # Create a new instance with the existing model, tokenizer, and prompt template
         logger.info("Creating a fresh model handler (reusing model)")
         
-        if hasattr(self.base_model_handler, 'model') and self.base_model_handler.model is not None:
+        if self.base_model_handler is not None and hasattr(self.base_model_handler, 'model') and self.base_model_handler.model is not None:
             handler = DeepSeekHandler(
                 model=self.base_model_handler.model,
                 tokenizer=self.base_model_handler.tokenizer,
                 prompt_template=self.base_model_handler.prompt_template
             )
         else:
-            # Fallback if no model is loaded yet
-            handler = DeepSeekHandler()
+            # If for some reason base handler is missing, load anew (should happen only once)
+            model = load_model()
+            tokenizer = load_tokenizer()
+            handler = DeepSeekHandler(model=model, tokenizer=tokenizer)
             
         return handler
     
