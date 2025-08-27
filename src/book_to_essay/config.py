@@ -16,11 +16,13 @@ logger = logging.getLogger(__name__)
 # Load environment variables from a .env file if present (host development convenience)
 load_dotenv()
 
+HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
+
 # -----------------------------------------------------------------------------
 # Model Settings (static defaults for host usage)
 # -----------------------------------------------------------------------------
 # MODEL_NAME = "deepseek-ai/deepseek-llm-7b-base"  # Larger DeepSeek model
-MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.1"  # Default to Mistral for testing
+MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.3"  # Default to Mistral for testing
 # MODEL_NAME = "deepseek-ai/deepseek-coder-1.3b-base"  # Smaller DeepSeek model
 
 # Default model generation parameters

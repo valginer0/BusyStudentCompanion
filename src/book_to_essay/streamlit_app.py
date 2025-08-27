@@ -10,7 +10,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph
 from reportlab.lib.styles import getSampleStyleSheet
 from src.book_to_essay.ai_book_to_essay_generator import AIBookEssayGenerator
-from src.book_to_essay.config import SUPPORTED_FORMATS, MAX_UPLOAD_SIZE_MB
+from src.book_to_essay.config import SUPPORTED_FORMATS, MAX_UPLOAD_SIZE_MB, HUGGINGFACE_TOKEN
 
 st.set_page_config(
     page_title="Book to Essay Generator",
@@ -55,7 +55,7 @@ def main():
     
     # Initialize session state
     if 'generator' not in st.session_state:
-        st.session_state.generator = AIBookEssayGenerator()
+        st.session_state.generator = AIBookEssayGenerator(token=HUGGINGFACE_TOKEN)
     if 'uploaded_files' not in st.session_state:
         st.session_state.uploaded_files = []
 

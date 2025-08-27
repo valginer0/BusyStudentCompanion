@@ -40,16 +40,20 @@ pip install -r requirements-cpu.txt
 4. Set up environment variables and select model:
 ```bash
 cp .env.example .env
-# Edit .env file with your API keys and configuration
-# Set the MODEL_NAME variable to either 'mistralai/Mistral-7B-Instruct-v0.1' or 'deepseek-ai/deepseek-llm-7b-base'
+# Edit .env file to add your Hugging Face token.
+# This is required for gated models like Mistral v0.3.
+# HUGGINGFACE_TOKEN="your_token_here"
+#
+# Set the MODEL_NAME variable, for example:
+# MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.3”
 ```
 
 ## Model Selection
 
 You can choose between **Mistral** and **DeepSeek** models for essay generation. To change the model, edit the `MODEL_NAME` variable in your `.env` file or in `src/book_to_essay/config.py`:
 
-```
-MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.1"  # For Mistral
+```python
+MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.3"  # For Mistral (requires auth token)
 # or
 MODEL_NAME = "deepseek-ai/deepseek-llm-7b-base"   # For DeepSeek
 ```
@@ -58,7 +62,7 @@ MODEL_NAME = "deepseek-ai/deepseek-llm-7b-base"   # For DeepSeek
 
 Both the **Mistral** and **DeepSeek** models are free to use for research and non-commercial purposes:
 
-- [Mistral-7B-Instruct-v0.1 on Hugging Face](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.1) ([License](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.1/blob/main/LICENSE))
+- [Mistral-7B-Instruct-v0.3 on Hugging Face](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.3) ([License](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.3/blob/main/LICENSE)) - **Note**: This is a gated model and requires a Hugging Face token for access.
 - [DeepSeek LLM-7B on Hugging Face](https://huggingface.co/deepseek-ai/deepseek-llm-7b-base) ([License](https://huggingface.co/deepseek-ai/deepseek-llm-7b-base/blob/main/LICENSE))
 
 ## Model Download

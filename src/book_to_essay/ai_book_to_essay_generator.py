@@ -16,11 +16,12 @@ from src.book_to_essay.essay_utilities import get_essay_cache_key
 logger = logging.getLogger(__name__)
 
 class AIBookEssayGenerator:
-    def __init__(self):
+    def __init__(self, token: Optional[str] = None):
         self.content = ""
         self.sources = []
         self._model = None
         self.cache_manager = CacheManager()
+        self.token = token
 
     @property
     def model(self):
@@ -30,8 +31,8 @@ class AIBookEssayGenerator:
                 logger.info("Creating new DeepSeekHandler instance")
                 # Properly load model and tokenizer before passing to DeepSeekHandler
                 from src.book_to_essay.model_loader import load_model, load_tokenizer
-                base_model = load_model()
-                tokenizer = load_tokenizer()
+                base_model = load_model(token=self.token)
+                tokenizer = load_tokenizer(token=self.token)
                 self._model = DeepSeekHandler(model=base_model, tokenizer=tokenizer)
             except Exception as e:
                 logger.error(f"Error initializing model: {str(e)}")
