@@ -55,7 +55,8 @@ def main():
     
     # Initialize session state
     if 'generator' not in st.session_state:
-        st.session_state.generator = AIBookEssayGenerator(token=HUGGINGFACE_TOKEN)
+        with st.spinner("Initializing AI model... This may take several minutes on the first run while the model is downloaded."):
+            st.session_state.generator = AIBookEssayGenerator(token=HUGGINGFACE_TOKEN)
     if 'uploaded_files' not in st.session_state:
         st.session_state.uploaded_files = []
 
@@ -88,10 +89,10 @@ def main():
                 st.error("Please provide an essay topic!")
                 return
                 
-            with st.spinner("Processing books and generating essay..."):
-                try:
-                    # Create a temporary directory for uploaded files
-                    with tempfile.TemporaryDirectory() as temp_dir:
+            try:
+                # Create a temporary directory for uploaded files
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    with st.spinner("Processing uploaded books..."):
                         # Process uploaded files
                         for uploaded_file in uploaded_files:
                             try:
@@ -114,14 +115,16 @@ def main():
                             except Exception as e:
                                 st.error(f"Error processing {uploaded_file.name}: {str(e)}")
                                 continue
-                        
+                    
+                    with st.spinner("Generating essay... This can take a moment."):
                         # Generate essay
                         essay = st.session_state.generator.generate_essay(topic, word_limit)
                         st.session_state.essay = essay
                         st.session_state.quotes = st.session_state.generator.extract_quotes()
-                except Exception as e:
-                    st.error(f"An error occurred: {str(e)}")
-                    return
+
+            except Exception as e:
+                st.error(f"An error occurred: {str(e)}")
+                return
 
     with col2:
         st.header("Generated Essay")

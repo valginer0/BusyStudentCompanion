@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 # Load environment variables from a .env file if one is baked into the image or supplied via bind mount.
 load_dotenv()
 
+HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
+
 # -----------------------------------------------------------------------------
 # Model Settings (Docker default)
 # -----------------------------------------------------------------------------
