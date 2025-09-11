@@ -78,6 +78,17 @@ On the first run, the application will:
 3. The model will be cached locally and subsequent runs will start immediately
 4. Memory usage is optimized using 4-bit quantization while maintaining high quality
 
+## Performance Considerations
+
+**CPU vs. GPU Performance**
+
+- **CPU (Default):** Essay generation on a CPU is **very time-consuming**. For a full-length book, the process can take **over an hour** after the initial model download. This is expected behavior for running large language models on a CPU.
+- **GPU (Recommended):** If you have a compatible NVIDIA GPU, using the GPU-enabled container is **highly recommended**. This will reduce the generation time from over an hour to just a few minutes.
+
+**Using the Cache**
+
+To ensure fast startup times on subsequent runs, always use a mounted cache volume with the `-v` flag when running the Docker container. This saves the downloaded model to your local disk, avoiding the 15-30 minute download on every run.
+
 ## Caching System
 
 The application uses a two-level caching system:
