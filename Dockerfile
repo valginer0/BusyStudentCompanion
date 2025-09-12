@@ -5,7 +5,12 @@ FROM python:3.10-slim
 # Set environment variables to force CPU
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+ENV HF_HOME=/cache/huggingface
 ENV TRANSFORMERS_CACHE=/cache/huggingface
+ENV HUGGINGFACE_HUB_CACHE=/cache/huggingface
+ENV TORCH_HOME=/cache/torch
+ENV CACHE_DIR=/app/cache
 ENV FORCE_CUDA=0
 ENV CUDA_VISIBLE_DEVICES=""
 
@@ -32,6 +37,11 @@ RUN pip install --no-cache-dir torch==2.1.2+cpu torchvision==0.16.2+cpu torchaud
 
 # Copy the rest of the project
 COPY . .
+
+# Ensure cache and output directories exist inside the image
+RUN mkdir -p /cache/huggingface /cache/torch \
+    && mkdir -p /app/cache/content /app/cache/models \
+    && mkdir -p /app/uploads /app/output
 
 # Replace host config with Docker-specific defaults
 COPY src/book_to_essay/config.docker.py /app/src/book_to_essay/config.py

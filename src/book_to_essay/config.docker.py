@@ -35,13 +35,16 @@ MAX_CHUNK_SIZE = 1500
 MAX_CHUNKS_PER_ANALYSIS = 5
 
 # -----------------------------------------------------------------------------
-# Cache Settings (Docker volume mounted at /cache)
+# Cache Settings (Docker named volumes mounted at /app/cache and /cache)
+#   - Content cache: /app/cache/content
+#   - Model output cache: /app/cache/models
+#   - HF/Torch caches handled via env (HF_HOME, TRANSFORMERS_CACHE, TORCH_HOME)
 # -----------------------------------------------------------------------------
-MODEL_CACHE_ROOT = os.getenv('MODEL_CACHE_ROOT', '/app/cache/models')
-MODEL_CACHE_DIR = MODEL_CACHE_ROOT
-CONTENT_CACHE_DIR = os.path.join(MODEL_CACHE_ROOT, 'content')
+CACHE_DIR = os.getenv('CACHE_DIR', '/app/cache')
+MODEL_CACHE_DIR = os.path.join(CACHE_DIR, 'models')      # /app/cache/models
+CONTENT_CACHE_DIR = os.path.join(CACHE_DIR, 'content')   # /app/cache/content
 
-os.makedirs(MODEL_CACHE_ROOT, exist_ok=True)
+os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
 os.makedirs(CONTENT_CACHE_DIR, exist_ok=True)
 
 # -----------------------------------------------------------------------------

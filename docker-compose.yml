@@ -1,21 +1,25 @@
-version: '3.8'
 services:
   app-cpu:
     build:
       context: .
       dockerfile: Dockerfile
     volumes:
-      - .:/app
+      - content-cache:/app/cache/content
+      - app-model-cache:/app/cache/models
       - model-cache:/cache/torch
       - huggingface-cache:/cache/huggingface
-      - ./cache/content:/app/cache/content
-      - ./cache/models:/app/cache/models
     environment:
       - PYTHONPATH=/app
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+      - HF_HOME=/cache/huggingface
+      - TRANSFORMERS_CACHE=/cache/huggingface
+      - HUGGINGFACE_HUB_CACHE=/cache/huggingface
+      - TORCH_HOME=/cache/torch
+      - CACHE_DIR=/app/cache
     ports:
       - "8501:8501"
-    command: streamlit run src/book_to_essay/streamlit_app.py
+    restart: unless-stopped
+    command: streamlit run /app/src/book_to_essay/streamlit_app.py
     labels:
       - "org.label-schema.description=CPU version of BusyStudentCompanion"
 
@@ -25,16 +29,21 @@ services:
       dockerfile: Dockerfile.gpu
     runtime: nvidia
     volumes:
-      - .:/app
+      - content-cache:/app/cache/content
+      - app-model-cache:/app/cache/models
       - model-cache:/cache/torch
       - huggingface-cache:/cache/huggingface
-      - ./cache/content:/app/cache/content
-      - ./cache/models:/app/cache/models
     environment:
       - PYTHONPATH=/app
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+      - HF_HOME=/cache/huggingface
+      - TRANSFORMERS_CACHE=/cache/huggingface
+      - HUGGINGFACE_HUB_CACHE=/cache/huggingface
+      - TORCH_HOME=/cache/torch
+      - CACHE_DIR=/app/cache
     ports:
       - "8502:8501"
+    restart: unless-stopped
     command: /app/start.sh
     labels:
       - "org.label-schema.description=GPU-accelerated BusyStudentCompanion (beta)"
@@ -44,20 +53,27 @@ services:
       context: .
       dockerfile: Dockerfile.test
     volumes:
-      - .:/app
+      - content-cache:/app/cache/content
+      - app-model-cache:/app/cache/models
       - model-cache:/cache/torch
       - huggingface-cache:/cache/huggingface
-      - ./cache/content:/app/cache/content
-      - ./cache/models:/app/cache/models
     environment:
       - PYTHONPATH=/app
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+      - HF_HOME=/cache/huggingface
+      - TRANSFORMERS_CACHE=/cache/huggingface
+      - HUGGINGFACE_HUB_CACHE=/cache/huggingface
+      - TORCH_HOME=/cache/torch
+      - CACHE_DIR=/app/cache
     ports:
       - "8503:8501"
-    command: streamlit run src/book_to_essay/streamlit_app.py
+    restart: unless-stopped
+    command: streamlit run /app/src/book_to_essay/streamlit_app.py
     labels:
       - "org.label-schema.description=Test version simulating GPU code on CPU"
 
 volumes:
   model-cache:
   huggingface-cache:
+  content-cache:
+  app-model-cache:
